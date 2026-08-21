@@ -32,6 +32,7 @@ const NAV_ITEMS: NavItem[] = [
     ]
   },
   { href: '/verifikasi-iku',        icon: 'task_alt',              label: 'Verifikasi IKU',     roles: ['pimpinan_unit', 'admin'] },
+  { href: '/verifikasi-skp',        icon: 'fact_check',            label: 'Verifikasi SKP',     roles: ['supervisor', 'manajer'] },
   { href: '/admin/manajemen-periode', icon: 'date_range',          label: 'Manajemen Periode',  roles: ['admin'] },
   { href: '/admin/manajemen-iku',   icon: 'description',           label: 'Manajemen IKU',      roles: ['admin'] },
   { href: '/admin/manajemen-user',  icon: 'manage_accounts',       label: 'Manajemen User',     roles: ['admin'] },

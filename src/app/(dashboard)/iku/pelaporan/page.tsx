@@ -79,6 +79,40 @@ export default function PelaporanIKUPage() {
     setModalMode('lapor')
   }
 
+  const handleBatalkanItem = async (item: IKUPengajuanItem) => {
+    const { value: alasan } = await Swal.fire({
+      title: 'Ajukan Pembatalan IKU',
+      html: `Apakah Anda yakin ingin membatalkan IKU:<br/><b>${item.iku?.nama_iku}</b>?`,
+      input: 'textarea',
+      inputLabel: 'Alasan Pembatalan',
+      inputPlaceholder: 'Tuliskan alasan kenapa IKU ini dibatalkan...',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      confirmButtonText: 'Ya, Ajukan Batal',
+      inputValidator: (value) => {
+        if (!value) {
+          return 'Alasan pembatalan wajib diisi!'
+        }
+      }
+    })
+
+    if (alasan) {
+      setLoading(true)
+      const { error } = await supabase
+        .from('iku_pengajuan_item')
+        .update({ status_pembatalan: 'pending', alasan_pembatalan: alasan })
+        .eq('id', item.id)
+
+      if (error) {
+        Swal.fire('Error', 'Gagal memproses pengajuan pembatalan', 'error')
+        setLoading(false)
+      } else {
+        Swal.fire('Berhasil', 'Permintaan pembatalan telah dikirim ke Pimpinan Unit', 'success')
+        fetchItems()
+      }
+    }
+  }
+
   const handleDeleteLapor = async (laporan: any) => {
     const result = await Swal.fire({
       title: 'Hapus Laporan?',
@@ -219,13 +253,16 @@ export default function PelaporanIKUPage() {
                 <div className="p-6 bg-white/60">
                   <div className="flex flex-col lg:flex-row justify-between gap-6">
                     <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-3">
+                      <div className="flex flex-wrap items-center gap-3 mb-3">
                         <span className="px-2 py-1 bg-primary/10 text-primary font-bold text-label-sm rounded-lg">
                           {item.iku?.kode_iku}
                         </span>
                         <span className="text-body-sm text-on-surface-variant px-2 py-1 bg-surface-container rounded border border-outline-variant/20">
                           {item.pengajuan?.periode?.tahun_iku} - {item.pengajuan?.judul}
                         </span>
+                        {item.status_pembatalan === 'pending' && <span className="px-2 py-1 bg-warning/10 text-warning font-bold text-label-sm rounded-lg flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">schedule</span> Menunggu Persetujuan Batal</span>}
+                        {item.status_pembatalan === 'approved' && <span className="px-2 py-1 bg-error/10 text-error font-bold text-label-sm rounded-lg flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">cancel</span> Dibatalkan</span>}
+                        {item.status_pembatalan === 'rejected' && <span className="px-2 py-1 bg-surface-container-high text-on-surface-variant font-bold text-label-sm rounded-lg flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">block</span> Batal Ditolak</span>}
                       </div>
                       <h4 className="font-headline-md text-on-surface mb-1">{item.iku?.nama_iku}</h4>
                       <p className="text-body-md text-on-surface-variant mb-4">{item.iku?.nama_kegiatan}</p>
@@ -248,9 +285,23 @@ export default function PelaporanIKUPage() {
                             <p className="font-bold text-on-surface">{percentage}%</p>
                           </div>
                         </div>
-                        <div className="h-2 w-full bg-surface-container rounded-full overflow-hidden">
+                        <div className="h-2 w-full bg-surface-container rounded-full overflow-hidden mb-4">
                           <div className={`h-full transition-all duration-500 ${percentage >= 100 ? 'bg-success' : 'bg-primary'}`} style={{ width: `${percentage}%` }}></div>
                         </div>
+
+                        {item.status_pembatalan !== 'pending' && item.status_pembatalan !== 'approved' && (
+                          <button onClick={() => handleBatalkanItem(item)} className="text-error hover:bg-error/10 px-3 py-1.5 rounded-lg text-label-sm font-bold transition-colors inline-flex items-center gap-1.5 mt-2">
+                            <span className="material-symbols-outlined text-[16px]">cancel</span>
+                            Ajukan Pembatalan IKU
+                          </button>
+                        )}
+                        
+                        {item.alasan_pembatalan && (
+                          <div className={`mt-4 p-3 rounded-xl border text-body-sm ${item.status_pembatalan === 'pending' ? 'bg-warning/5 border-warning/20 text-warning-dark' : item.status_pembatalan === 'approved' ? 'bg-error/5 border-error/20 text-error' : 'bg-surface-container-low border-outline-variant/20'}`}>
+                            <p className="font-bold flex items-center gap-1 mb-1 text-[11px] uppercase tracking-wider"><span className="material-symbols-outlined text-[14px]">info</span> Alasan Pembatalan:</p>
+                            <p>{item.alasan_pembatalan}</p>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -287,10 +338,10 @@ export default function PelaporanIKUPage() {
                           </div>
                         )}
                       </div>
-                      <button onClick={() => handleOpenLapor(item)}
-                        className="w-full mt-4 flex items-center justify-center gap-2 bg-primary/10 text-primary px-4 py-2.5 rounded-xl font-bold hover:bg-primary hover:text-white transition-all">
+                      <button onClick={() => handleOpenLapor(item)} disabled={item.status_pembatalan === 'approved' || item.status_pembatalan === 'pending'}
+                        className="w-full mt-4 flex items-center justify-center gap-2 bg-primary/10 text-primary px-4 py-2.5 rounded-xl font-bold hover:bg-primary hover:text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed">
                         <span className="material-symbols-outlined text-[18px]">add_task</span>
-                        Tambah Laporan
+                        {item.status_pembatalan === 'approved' ? 'IKU Dibatalkan' : 'Tambah Laporan'}
                       </button>
                     </div>
                   </div>

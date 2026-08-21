@@ -43,6 +43,9 @@ export default function PengajuanIKUPage() {
 
     if (periodData) {
       setActivePeriod(periodData)
+    } else {
+      setLoading(false)
+      return
     }
 
     // 2. Get All Master IKU
@@ -51,8 +54,34 @@ export default function PengajuanIKUPage() {
       .select('*')
       .order('kode_iku')
 
+    // 3. Get Existing IKU items for this user in this period (exclude rejected and cancelled pengajuans)
+    const { data: myPengajuans, error: errP } = await supabase
+      .from('iku_pengajuan')
+      .select('id')
+      .eq('periode_id', periodData.id)
+      .eq('manajer_id', user?.id)
+      .neq('status', 'rejected')
+      .neq('status', 'cancelled')
+
+    const pIds = myPengajuans?.map(p => p.id) || []
+
+    let existingItems: any[] = []
+    if (pIds.length > 0) {
+      const { data: items, error: errI } = await supabase
+        .from('iku_pengajuan_item')
+        .select('iku_id, status_pembatalan')
+        .in('pengajuan_id', pIds)
+      
+      if (items) existingItems = items
+    }
+
+    // Filter out items that are cancelled at the item level
+    const existingItemsValid = existingItems?.filter(item => item.status_pembatalan !== 'approved') || []
+    const existingIkuIds = new Set(existingItemsValid.map(item => item.iku_id))
+
     if (ikuData) {
-      setIkus(ikuData.map(item => ({
+      const availableIkus = ikuData.filter(item => !existingIkuIds.has(item.id))
+      setIkus(availableIkus.map(item => ({
         iku: item,
         target_output: '',
         satuan: 'Unit',
@@ -236,7 +265,7 @@ export default function PengajuanIKUPage() {
             <div className="flex items-center gap-4 w-full sm:w-auto">
               <div className="relative w-full sm:w-64">
                 <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-[20px]">search</span>
-                <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Cari IKU atau Kegiatan..."
+                <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Cari IKU, Kegiatan, atau Output..."
                   className="w-full bg-white border border-outline-variant/50 rounded-xl pl-10 pr-4 py-2 text-body-sm outline-none focus:ring-2 focus:ring-primary/20 transition-all" />
               </div>
               <span className="px-3 py-1 bg-primary/10 text-primary rounded-full font-bold text-label-sm whitespace-nowrap">
@@ -249,7 +278,8 @@ export default function PengajuanIKUPage() {
             {ikus.filter(item => 
               item.iku.kode_iku.toLowerCase().includes(searchQuery.toLowerCase()) ||
               item.iku.nama_iku.toLowerCase().includes(searchQuery.toLowerCase()) ||
-              item.iku.nama_kegiatan.toLowerCase().includes(searchQuery.toLowerCase())
+              item.iku.nama_kegiatan.toLowerCase().includes(searchQuery.toLowerCase()) ||
+              (item.iku.nama_output && item.iku.nama_output.toLowerCase().includes(searchQuery.toLowerCase()))
             ).map((item) => (
               <div key={item.iku.id} className={`glass-card p-5 rounded-2xl transition-all border-2 ${item.selected ? 'border-primary/50 bg-primary/5' : 'border-transparent hover:border-outline-variant/30'}`}>
                 <div className="flex gap-4">

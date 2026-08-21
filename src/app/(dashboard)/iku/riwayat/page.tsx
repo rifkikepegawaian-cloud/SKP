@@ -73,6 +73,7 @@ export default function RiwayatIKUPage() {
     }
   }
 
+
   const handleItemChange = (id: string, field: string, value: string) => {
     setEditedItems(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item))
   }
@@ -253,7 +254,12 @@ export default function RiwayatIKUPage() {
                           {item.iku?.kode_iku}
                         </span>
                         <h5 className="font-bold text-on-surface mb-1">{item.iku?.nama_iku}</h5>
-                        <p className="text-body-sm text-on-surface-variant mb-4">{item.iku?.nama_kegiatan}</p>
+                        <p className="text-body-sm text-on-surface-variant mb-2">{item.iku?.nama_kegiatan}</p>
+                        <div className="mb-4 inline-block px-3 py-1.5 bg-surface-container-low rounded-lg border border-outline-variant/30">
+                          <p className="text-[11px] text-on-surface-variant font-bold uppercase tracking-wider flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-[14px]">flag</span> {item.iku?.nama_output}
+                          </p>
+                        </div>
                         
                         {(selected.status === 'revision' || selected.status === 'draft') ? (
                           <div className="pt-4 border-t border-outline-variant/20 space-y-4">

@@ -70,7 +70,10 @@ create table if not exists skp_plans (
   target_individual numeric not null default 0,
   satuan           text not null default 'Unit',
   rencana_aksi     text,
-  status           text not null check (status in ('draft','pending','approved','revision')) default 'draft',
+  parent_skp_id    uuid references skp_plans(id) on delete set null,
+  iku_item_id      uuid references iku_pengajuan_item(id) on delete set null,
+  catatan_reviewer text,
+  status           text not null check (status in ('draft','pending','approved','rejected','revision')) default 'draft',
   created_at       timestamptz default now(),
   updated_at       timestamptz default now()
 );
@@ -145,9 +148,9 @@ create policy "Manage IKU: admin" on master_iku
 create policy "SKP: own" on skp_plans
   for all using (user_id = auth.uid());
 
--- Supervisor+ can read SKP plans of users in their unit
-create policy "SKP: supervisor+ read" on skp_plans
-  for select using (
+-- Reviewer can update SKP plans
+create policy "SKP: reviewer update" on skp_plans
+  for update using (
     exists (
       select 1 from users u
       join pegawai p on p.id = u.pegawai_id
@@ -155,15 +158,17 @@ create policy "SKP: supervisor+ read" on skp_plans
       join pegawai owner_p on owner_p.id = owner.pegawai_id
       where u.id = auth.uid()
         and (
-          position('supervisor' in u.role) > 0 or 
-          position('manajer' in u.role) > 0 or 
-          position('pimpinan' in u.role) > 0 or 
-          position('rektor' in u.role) > 0 or 
-          position('admin' in u.role) > 0
+          (position('supervisor' in u.role) > 0 and position('staff' in owner.role) > 0 and p.unit_es4 = owner_p.unit_es4)
+          or
+          (position('manajer' in u.role) > 0 and position('supervisor' in owner.role) > 0 and p.unit_es3 = owner_p.unit_es3)
+          or public.is_admin()
         )
-        and p.unit_es2 = owner_p.unit_es2
     )
   );
+
+-- Everyone can read SKP plans (frontend handles the filtering)
+create policy "SKP: read all" on skp_plans
+  for select using (auth.role() = 'authenticated');
 
 -- Activity logs: own entries
 create policy "Logs: own" on activity_logs
@@ -197,51 +202,7 @@ create policy "Manage risks: admin" on unit_risks
 create policy "Manage salary: admin" on job_salary
   for all using ( public.is_admin() );
 
--- ──────────────────────────────────────────
--- 5. STORAGE BUCKET (run separately in Supabase dashboard or via API)
--- ──────────────────────────────────────────
--- insert into storage.buckets (id, name, public) values ('evidence', 'evidence', false);
 
--- ──────────────────────────────────────────
--- 6. SEED DATA (demo)
--- ──────────────────────────────────────────
-
-insert into pegawai (id, nama_lengkap, nip, unit_es2, unit_es3, unit_es4) values
-  ('aaaaaaaa-0000-0000-0000-000000000001', 'Budi Santoso', '198506122010121003', 'Biro SDM & Umum', 'Bagian Kepegawaian', 'Sub Bagian Mutasi'),
-  ('aaaaaaaa-0000-0000-0000-000000000002', 'Siti Wahyuni', '199008242015032001', 'Fakultas Teknik', 'Departemen Teknik Sipil', 'Lab Struktur'),
-  ('aaaaaaaa-0000-0000-0000-000000000003', 'Ahmad Rizky', '198712052012011001', 'Fakultas Ekonomika & Bisnis', 'Departemen Manajemen', 'Prodi S1 Manajemen')
-on conflict do nothing;
-
-insert into unit_risks (unit_id, unit_name, risk_factor) values
-  ('11111111-0000-0000-0000-000000000001', 'Biro SDM & Umum',          1.25),
-  ('11111111-0000-0000-0000-000000000002', 'Fakultas Teknik',          1.15),
-  ('11111111-0000-0000-0000-000000000003', 'Fakultas Ekonomika & Bisnis', 1.10)
-on conflict do nothing;
-
-insert into job_salary (job_id, job_name, standard_payment) values
-  ('22222222-0000-0000-0000-000000000001', 'Senior Analyst',    5000000),
-  ('22222222-0000-0000-0000-000000000002', 'Staf Administrasi', 3500000),
-  ('22222222-0000-0000-0000-000000000003', 'Dekan',             8000000)
-on conflict do nothing;
-
-insert into master_iku (id, kode_iku, nama_iku, kode_kegiatan, nama_kegiatan, kode_output, nama_output) values
-  ('33333333-0000-0000-0000-000000000001',
-   'IKU-01', 'Transformasi Kompetensi SDM 4.0',
-   'KGT-01', 'Penyusunan Kurikulum Digital HR',
-   'OUT-01', 'Modul Pelatihan Berbasis LMS'),
-  ('33333333-0000-0000-0000-000000000002',
-   'IKU-02', 'Optimasi Budaya Kerja Digital 2024',
-   'KGT-02', 'Implementasi Monitoring Realtime',
-   'OUT-02', 'Dashboard Monitoring Departemen'),
-  ('33333333-0000-0000-0000-000000000003',
-   'IKU-01', 'Transformasi Kompetensi SDM 4.0',
-   'KGT-03', 'Sosialisasi SKP Digital',
-   'OUT-03', 'Peserta Sosialisasi')
-on conflict do nothing;
-
--- ──────────────────────────────────────────
--- 7. MANAJEMEN PERIODE & IKU BAGIAN
--- ──────────────────────────────────────────
 
 create table if not exists master_periode_iku (
   id                    uuid primary key default uuid_generate_v4(),
@@ -257,8 +218,9 @@ create table if not exists iku_pengajuan (
   periode_id       uuid not null references master_periode_iku(id),
   manajer_id       uuid not null references users(id) on delete cascade,
   judul            text not null default 'Pengajuan IKU Bagian',
-  status           text not null check (status in ('draft','pending','approved','rejected','revision')) default 'draft',
+  status           text not null check (status in ('draft','pending','approved','rejected','revision','cancellation_pending','cancelled')) default 'draft',
   catatan_penolakan text,
+  alasan_pembatalan text,
   reviewed_by      uuid references users(id),
   reviewed_at      timestamptz,
   submitted_at     timestamptz,
@@ -273,6 +235,8 @@ create table if not exists iku_pengajuan_item (
   target_output   numeric not null default 0,
   satuan          text not null default 'Unit',
   catatan_pimpinan text,
+  status_pembatalan text check (status_pembatalan in ('pending', 'approved', 'rejected')),
+  alasan_pembatalan text,
   created_at      timestamptz default now()
 );
 
@@ -308,6 +272,7 @@ create policy "IKU Pengajuan: pimpinan update" on iku_pengajuan for update using
     where u.id = auth.uid() and (position('pimpinan' in u.role) > 0)
   )
 );
+create policy "IKU Pengajuan: read approved" on iku_pengajuan for select using (status = 'approved');
 
 -- RLS for IKU Item
 alter table iku_pengajuan_item enable row level security;
@@ -325,6 +290,9 @@ create policy "IKU Item: pimpinan update" on iku_pengajuan_item for update using
     select 1 from users u 
     where u.id = auth.uid() and (position('pimpinan' in u.role) > 0)
   )
+);
+create policy "IKU Item: read approved" on iku_pengajuan_item for select using (
+  exists (select 1 from iku_pengajuan p where p.id = pengajuan_id and p.status = 'approved')
 );
 
 -- RLS for Laporan

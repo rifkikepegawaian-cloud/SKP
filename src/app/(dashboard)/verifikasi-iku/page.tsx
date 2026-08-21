@@ -9,6 +9,7 @@ import Swal from 'sweetalert2'
 export default function VerifikasiIKUPage() {
   const user = useAuthStore(state => state.user)
   const [pengajuans, setPengajuans] = useState<IKUPengajuan[]>([])
+  const [batalItems, setBatalItems] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('Semua')
   const [selected, setSelected] = useState<IKUPengajuan | null>(null)
@@ -58,21 +59,87 @@ export default function VerifikasiIKUPage() {
       
       setPengajuans(filteredData || [])
     }
+
+    // Fetch Batal Items
+    const { data: itemData } = await supabase
+      .from('iku_pengajuan_item')
+      .select(`
+        *, 
+        iku:master_iku(*),
+        pengajuan:iku_pengajuan!inner(
+          *, 
+          periode:master_periode_iku(*), 
+          manajer:users!iku_pengajuan_manajer_id_fkey(id, email, pegawai:pegawai(*))
+        )
+      `)
+      .eq('status_pembatalan', 'pending')
+
+    if (itemData) {
+      let filteredBatal = itemData as any[]
+      if (!isAdmin && ledUnit) {
+        filteredBatal = filteredBatal.filter(item => {
+          const manajerUnit = item.pengajuan?.manajer?.pegawai?.unit_es2;
+          return manajerUnit && manajerUnit.trim().toLowerCase() === ledUnit.trim().toLowerCase();
+        });
+      }
+      setBatalItems(filteredBatal)
+    }
+
     setLoading(false)
   }
 
-  const handleReview = async (status: 'approved' | 'rejected' | 'revision') => {
+  const handleReviewBatal = async (item: any, status_pembatalan: 'approved' | 'rejected') => {
+    let catatan = null;
+    if (status_pembatalan === 'rejected') {
+      const { value } = await Swal.fire({
+        title: 'Tolak Pembatalan',
+        text: 'Masukkan alasan kenapa pembatalan ini ditolak (wajib)',
+        input: 'textarea',
+        showCancelButton: true,
+        inputValidator: (val) => !val ? 'Alasan wajib diisi!' : null
+      });
+      if (!value) return;
+      catatan = value;
+    } else {
+      const result = await Swal.fire({
+        title: 'Setujui Pembatalan?',
+        text: 'IKU ini akan dibatalkan secara permanen.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33'
+      });
+      if (!result.isConfirmed) return;
+    }
+
+    setSaving(true);
+    let updateData: any = { status_pembatalan };
+    if (catatan) {
+      updateData.alasan_pembatalan = item.alasan_pembatalan + `\n\n[Ditolak Pimpinan]: ${catatan}`;
+    }
+
+    const { error } = await supabase.from('iku_pengajuan_item').update(updateData).eq('id', item.id);
+    setSaving(false);
+
+    if (error) Swal.fire('Error', 'Gagal memproses pembatalan', 'error');
+    else {
+      Swal.fire('Berhasil', 'Permintaan pembatalan telah diproses', 'success');
+      fetchPengajuans();
+    }
+  }
+
+  const handleReview = async (status: 'approved' | 'rejected' | 'revision' | 'cancelled') => {
     if (!selected) return
 
-    if ((status === 'rejected' || status === 'revision') && !catatan.trim()) {
-      Swal.fire('Peringatan', 'Catatan wajib diisi jika menolak atau meminta revisi', 'warning')
+    const isRejectingCancel = status === 'approved' && selected.status === 'cancellation_pending'
+    if ((status === 'rejected' || status === 'revision' || isRejectingCancel) && !catatan.trim()) {
+      Swal.fire('Peringatan', 'Catatan wajib diisi jika menolak, meminta revisi, atau menolak pembatalan', 'warning')
       return
     }
 
     setSaving(true)
 
-    // Update item-level comments
-    if (status !== 'approved') {
+    // Update item-level comments (only if it was pending)
+    if (selected.status === 'pending' && status !== 'approved') {
       for (const item of selected.items || []) {
         const cat = itemCatatan[item.id] || null
         await supabase
@@ -86,7 +153,7 @@ export default function VerifikasiIKUPage() {
       .from('iku_pengajuan')
       .update({
         status,
-        catatan_penolakan: status === 'approved' ? null : catatan,
+        catatan_penolakan: (status === 'approved' && !isRejectingCancel) ? null : catatan,
         reviewed_by: user?.id,
         reviewed_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
@@ -98,7 +165,8 @@ export default function VerifikasiIKUPage() {
     if (error) {
       Swal.fire('Error', 'Gagal memproses review pengajuan', 'error')
     } else {
-      Swal.fire('Berhasil', `Pengajuan telah ${status === 'approved' ? 'disetujui' : (status === 'rejected' ? 'ditolak' : 'dikembalikan untuk direvisi')}`, 'success')
+      let msg = `Pengajuan telah ${status === 'approved' ? 'disetujui' : (status === 'rejected' ? 'ditolak' : 'dikembalikan untuk direvisi')}`
+      Swal.fire('Berhasil', msg, 'success')
       setModalMode('closed')
       fetchPengajuans()
     }
@@ -137,7 +205,7 @@ export default function VerifikasiIKUPage() {
           <h3 className="font-headline-md text-headline-md text-on-surface">Daftar Pengajuan dari Manajer</h3>
           
           <div className="flex gap-2">
-            {['Semua', 'Pending', 'Selesai'].map(tab => (
+            {['Semua', 'Pending', 'Permintaan Batal', 'Selesai'].map(tab => (
               <button key={tab} onClick={() => setFilter(tab)}
                 className={`px-4 py-2 rounded-xl font-bold text-label-sm transition-colors ${filter === tab ? 'bg-primary text-white' : 'bg-surface-container hover:bg-surface-container-high text-outline'}`}>
                 {tab}
@@ -153,62 +221,110 @@ export default function VerifikasiIKUPage() {
               Memuat data...
             </div>
           ) : (
-            <table className="w-full text-left">
-              <thead className="bg-surface-container-low/50">
-                <tr>
-                  <th className="px-6 py-4 font-label-md text-label-sm text-on-surface-variant uppercase tracking-wider">Pengaju (Manajer)</th>
-                  <th className="px-6 py-4 font-label-md text-label-sm text-on-surface-variant uppercase tracking-wider">Judul & Periode</th>
-                  <th className="px-6 py-4 font-label-md text-label-sm text-on-surface-variant uppercase tracking-wider">Jumlah IKU</th>
-                  <th className="px-6 py-4 font-label-md text-label-sm text-on-surface-variant uppercase tracking-wider">Tanggal Diajukan</th>
-                  <th className="px-6 py-4 font-label-md text-label-sm text-on-surface-variant uppercase tracking-wider">Status</th>
-                  <th className="px-6 py-4 font-label-md text-label-sm text-on-surface-variant uppercase tracking-wider text-right">Aksi</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-outline-variant/10">
-                {filteredPengajuans.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="px-6 py-12 text-center text-outline">
-                      Belum ada pengajuan IKU yang masuk.
-                    </td>
-                  </tr>
-                ) : filteredPengajuans.map(p => (
-                  <tr key={p.id} className="hover:bg-primary/5 transition-colors group">
-                    <td className="px-6 py-4">
-                      <p className="font-bold text-on-surface mb-1">{(p as any).manajer?.pegawai?.nama_lengkap || (p as any).manajer?.email}</p>
-                      <p className="text-[11px] text-on-surface-variant">{(p as any).manajer?.pegawai?.unit_es3}</p>
-                    </td>
-                    <td className="px-6 py-4">
-                      <p className="font-bold text-on-surface mb-1">{p.judul}</p>
-                      <p className="text-body-sm text-on-surface-variant">Periode: <span className="font-mono">{p.periode?.tahun_iku}</span></p>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="px-3 py-1 bg-surface-container-low rounded-lg text-body-sm font-bold border border-outline-variant/30">
-                        {p.items?.length || 0} Item
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-body-sm text-on-surface-variant">
-                      {p.submitted_at ? new Date(p.submitted_at).toLocaleDateString('id-ID') : '-'}
-                    </td>
-                    <td className="px-6 py-4">
-                      {getStatusBadge(p.status)}
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <button onClick={() => { 
-                          setSelected(p); 
-                          setCatatan(p.catatan_penolakan || ''); 
-                          const initialItemCat: Record<string, string> = {}
-                          p.items?.forEach(item => { initialItemCat[item.id] = item.catatan_pimpinan || '' })
-                          setItemCatatan(initialItemCat)
-                          setModalMode('review') 
-                        }} 
-                        className={`px-4 py-2 rounded-xl font-bold text-label-sm transition-colors ${p.status === 'pending' ? 'bg-primary/10 text-primary hover:bg-primary hover:text-white' : 'bg-surface-container text-outline hover:bg-surface-container-high'}`}>
-                        {p.status === 'pending' ? 'Review Sekarang' : 'Lihat Detail'}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <>
+              {filter === 'Permintaan Batal' ? (
+                <table className="w-full text-left">
+                  <thead className="bg-surface-container-low/50">
+                    <tr>
+                      <th className="px-6 py-4 font-label-md text-label-sm text-on-surface-variant uppercase tracking-wider">Pengaju (Manajer)</th>
+                      <th className="px-6 py-4 font-label-md text-label-sm text-on-surface-variant uppercase tracking-wider">IKU & Periode</th>
+                      <th className="px-6 py-4 font-label-md text-label-sm text-on-surface-variant uppercase tracking-wider">Alasan Pembatalan</th>
+                      <th className="px-6 py-4 font-label-md text-label-sm text-on-surface-variant uppercase tracking-wider text-right">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-outline-variant/10">
+                    {batalItems.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="px-6 py-12 text-center text-outline">Tidak ada permintaan pembatalan</td>
+                      </tr>
+                    ) : batalItems.map(item => (
+                      <tr key={item.id} className="hover:bg-warning/5 transition-colors group">
+                        <td className="px-6 py-4">
+                          <p className="font-bold text-on-surface mb-1">{(item as any).pengajuan?.manajer?.pegawai?.nama_lengkap}</p>
+                          <p className="text-[11px] text-on-surface-variant">{(item as any).pengajuan?.manajer?.pegawai?.unit_es3}</p>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className="px-2 py-1 bg-primary/10 text-primary font-bold text-label-sm rounded-lg mb-1 inline-block">{item.iku?.kode_iku}</span>
+                          <p className="font-bold text-on-surface mb-1">{item.iku?.nama_iku}</p>
+                          <p className="text-body-sm text-on-surface-variant">Periode: <span className="font-mono">{item.pengajuan?.periode?.tahun_iku}</span></p>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="p-3 bg-warning/10 border border-warning/20 rounded-xl max-w-xs">
+                            <p className="text-[11px] font-bold text-warning uppercase tracking-wider mb-1 flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">info</span> Alasan Manajer:</p>
+                            <p className="text-body-sm text-on-surface">{item.alasan_pembatalan}</p>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <button onClick={() => handleReviewBatal(item, 'approved')} className="px-4 py-2 bg-error text-white font-bold text-label-sm rounded-lg hover:opacity-90 mr-2 shadow-sm">
+                            Setuju Batal
+                          </button>
+                          <button onClick={() => handleReviewBatal(item, 'rejected')} className="px-4 py-2 bg-surface-container text-on-surface font-bold text-label-sm rounded-lg hover:bg-surface-container-high shadow-sm">
+                            Tolak
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <table className="w-full text-left">
+                  <thead className="bg-surface-container-low/50">
+                    <tr>
+                      <th className="px-6 py-4 font-label-md text-label-sm text-on-surface-variant uppercase tracking-wider">Pengaju (Manajer)</th>
+                      <th className="px-6 py-4 font-label-md text-label-sm text-on-surface-variant uppercase tracking-wider">Judul & Periode</th>
+                      <th className="px-6 py-4 font-label-md text-label-sm text-on-surface-variant uppercase tracking-wider">Jumlah IKU</th>
+                      <th className="px-6 py-4 font-label-md text-label-sm text-on-surface-variant uppercase tracking-wider">Tanggal Diajukan</th>
+                      <th className="px-6 py-4 font-label-md text-label-sm text-on-surface-variant uppercase tracking-wider">Status</th>
+                      <th className="px-6 py-4 font-label-md text-label-sm text-on-surface-variant uppercase tracking-wider text-right">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-outline-variant/10">
+                    {filteredPengajuans.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="px-6 py-12 text-center text-outline">
+                          Belum ada pengajuan IKU yang masuk.
+                        </td>
+                      </tr>
+                    ) : filteredPengajuans.map(p => (
+                      <tr key={p.id} className="hover:bg-primary/5 transition-colors group">
+                        <td className="px-6 py-4">
+                          <p className="font-bold text-on-surface mb-1">{(p as any).manajer?.pegawai?.nama_lengkap || (p as any).manajer?.email}</p>
+                          <p className="text-[11px] text-on-surface-variant">{(p as any).manajer?.pegawai?.unit_es3}</p>
+                        </td>
+                        <td className="px-6 py-4">
+                          <p className="font-bold text-on-surface mb-1">{p.judul}</p>
+                          <p className="text-body-sm text-on-surface-variant">Periode: <span className="font-mono">{p.periode?.tahun_iku}</span></p>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className="px-3 py-1 bg-surface-container-low rounded-lg text-body-sm font-bold border border-outline-variant/30">
+                            {p.items?.length || 0} Item
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-body-sm text-on-surface-variant">
+                          {p.submitted_at ? new Date(p.submitted_at).toLocaleDateString('id-ID') : '-'}
+                        </td>
+                        <td className="px-6 py-4">
+                          {getStatusBadge(p.status)}
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <button onClick={() => { 
+                              setSelected(p); 
+                              setCatatan(p.catatan_penolakan || ''); 
+                              const initialItemCat: Record<string, string> = {}
+                              p.items?.forEach(item => { initialItemCat[item.id] = item.catatan_pimpinan || '' })
+                              setItemCatatan(initialItemCat)
+                              setModalMode('review') 
+                            }} 
+                            className={`px-4 py-2 rounded-xl font-bold text-label-sm transition-colors ${(p.status === 'pending') ? 'bg-primary/10 text-primary hover:bg-primary hover:text-white' : 'bg-surface-container text-outline hover:bg-surface-container-high'}`}>
+                            {(p.status === 'pending') ? 'Review Sekarang' : 'Lihat Detail'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -289,9 +405,36 @@ export default function VerifikasiIKUPage() {
                 ))}
               </div>
 
-              {/* Form Review (Only show if pending) */}
-              {selected.status === 'pending' ? (
-                <div className="p-6 bg-warning/5 border border-warning/20 rounded-2xl">
+              {/* Form Review Cancellation (if cancellation_pending) */}
+              {selected.status === 'cancellation_pending' ? (
+                <div className="p-6 bg-warning/5 border border-warning/20 rounded-2xl mt-8">
+                  <h4 className="font-headline-sm text-on-surface mb-4">Keputusan Pembatalan</h4>
+                  <div className="mb-4">
+                    <p className="text-label-sm font-bold uppercase tracking-wider mb-2 text-warning flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[16px]">warning</span> Alasan Pembatalan dari Manajer:
+                    </p>
+                    <p className="text-body-md whitespace-pre-wrap p-3 bg-white border border-warning/20 rounded-xl shadow-sm">{selected.alasan_pembatalan}</p>
+                  </div>
+                  <div className="mb-4">
+                    <label className="block font-label-md text-on-surface-variant mb-2">Catatan Penolakan (Wajib jika menolak pembatalan)</label>
+                    <textarea value={catatan} onChange={e => setCatatan(e.target.value)} placeholder="Berikan alasan kenapa pembatalan ditolak..." rows={3}
+                      className="w-full bg-white border border-outline-variant/50 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary/20 resize-none text-body-md" />
+                  </div>
+                  <div className="flex gap-3">
+                    <button onClick={() => handleReview('cancelled')} disabled={saving}
+                      className="flex-1 py-3 rounded-xl bg-error text-white font-bold shadow-lg shadow-error/20 hover:opacity-90 transition-all flex items-center justify-center gap-2">
+                      <span className="material-symbols-outlined">delete_forever</span>
+                      Setujui Batal
+                    </button>
+                    <button onClick={() => handleReview('approved')} disabled={saving}
+                      className="flex-1 py-3 rounded-xl bg-surface-container-high text-on-surface font-bold hover:opacity-90 transition-all flex items-center justify-center gap-2">
+                      <span className="material-symbols-outlined">block</span>
+                      Tolak Batal (Tetap Disetujui)
+                    </button>
+                  </div>
+                </div>
+              ) : selected.status === 'pending' ? (
+                <div className="p-6 bg-warning/5 border border-warning/20 rounded-2xl mt-8">
                   <h4 className="font-headline-sm text-on-surface mb-4">Keputusan Verifikasi</h4>
                   <div className="mb-4">
                     <label className="block font-label-md text-on-surface-variant mb-2">Catatan Pimpinan (Wajib jika menolak/revisi)</label>
@@ -317,14 +460,24 @@ export default function VerifikasiIKUPage() {
                   </div>
                 </div>
               ) : (
-                selected.catatan_penolakan && (
-                  <div className="mb-6 p-4 rounded-xl bg-surface-container-low border border-outline-variant/20">
-                    <p className="text-label-sm font-bold uppercase tracking-wider mb-1 flex items-center gap-1">
-                      <span className="material-symbols-outlined text-[16px]">info</span> Catatan Pimpinan:
-                    </p>
-                    <p className="text-body-md whitespace-pre-wrap">{selected.catatan_penolakan}</p>
-                  </div>
-                )
+                <div className="mt-8 space-y-4">
+                  {selected.alasan_pembatalan && (
+                    <div className="p-4 rounded-xl bg-warning-container/30 border border-warning/20 text-warning">
+                      <p className="text-label-sm font-bold uppercase tracking-wider mb-1 flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[16px]">warning</span> Alasan Pembatalan:
+                      </p>
+                      <p className="text-body-md whitespace-pre-wrap">{selected.alasan_pembatalan}</p>
+                    </div>
+                  )}
+                  {selected.catatan_penolakan && (
+                    <div className="p-4 rounded-xl bg-surface-container-low border border-outline-variant/20">
+                      <p className="text-label-sm font-bold uppercase tracking-wider mb-1 flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[16px]">info</span> Catatan Pimpinan:
+                      </p>
+                      <p className="text-body-md whitespace-pre-wrap">{selected.catatan_penolakan}</p>
+                    </div>
+                  )}
+                </div>
               )}
 
             </div>

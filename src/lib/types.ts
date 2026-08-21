@@ -57,7 +57,12 @@ export interface SKPPlan {
   target_individual: number
   satuan: string
   rencana_aksi: string
-  status: 'draft' | 'pending' | 'approved' | 'revision'
+  status: 'draft' | 'pending' | 'approved' | 'rejected' | 'revision'
+  catatan_reviewer?: string
+  parent_skp_id?: string
+  iku_item_id?: string
+  iku_item?: IKUPengajuanItem
+  parent_skp?: SKPPlan
   created_at: string
   updated_at: string
   // joins
@@ -120,8 +125,9 @@ export interface IKUPengajuan {
   periode_id: string
   manajer_id: string
   judul: string
-  status: 'draft' | 'pending' | 'approved' | 'rejected' | 'revision'
+  status: 'draft' | 'pending' | 'approved' | 'rejected' | 'revision' | 'cancellation_pending' | 'cancelled'
   catatan_penolakan?: string
+  alasan_pembatalan?: string
   reviewed_by?: string
   reviewed_at?: string
   submitted_at?: string
@@ -141,6 +147,8 @@ export interface IKUPengajuanItem {
   target_output: number
   satuan: string
   catatan_pimpinan?: string
+  status_pembatalan?: 'pending' | 'approved' | 'rejected'
+  alasan_pembatalan?: string
   created_at: string
   // joins
   pengajuan?: IKUPengajuan
