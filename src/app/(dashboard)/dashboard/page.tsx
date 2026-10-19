@@ -1,5 +1,7 @@
 'use client'
 
+import Link from 'next/link'
+
 export default function DashboardPage() {
   return (
     <div>
@@ -19,9 +21,13 @@ export default function DashboardPage() {
             <p className="font-label-md text-label-md text-on-error-container">Perencanaan SKP Pending</p>
             <p className="text-body-sm text-on-surface-variant">Batas waktu pengisian: 3 hari lagi.</p>
           </div>
-          <button className="ml-4 px-4 py-2 bg-error text-white text-label-sm font-label-md rounded-lg hover:shadow-lg transition-shadow">
-            Lengkapi Sekarang
-          </button>
+          <Link 
+            href="/cascading" 
+            className="ml-4 px-4 py-2 bg-primary text-white text-xs font-bold rounded-xl hover:shadow-lg transition-all flex items-center gap-1.5"
+          >
+            <span className="material-symbols-outlined text-sm">account_tree</span>
+            Buka Cascading & SKP
+          </Link>
         </div>
       </div>
 

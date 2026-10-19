@@ -14,10 +14,19 @@ interface IKUForm {
   nama_kegiatan: string
   kode_output: string
   nama_output: string
+  target_default?: string
+  satuan_default?: string
 }
 
 const emptyForm: IKUForm = {
-  kode_iku: '', nama_iku: '', kode_kegiatan: '', nama_kegiatan: '', kode_output: '', nama_output: ''
+  kode_iku: '', 
+  nama_iku: '', 
+  kode_kegiatan: '', 
+  nama_kegiatan: '', 
+  kode_output: '', 
+  nama_output: '',
+  target_default: '100',
+  satuan_default: '%'
 }
 
 export default function ManajemenIKUPage() {
@@ -152,6 +161,8 @@ export default function ManajemenIKUPage() {
       nama_kegiatan: iku.nama_kegiatan,
       kode_output: iku.kode_output,
       nama_output: iku.nama_output,
+      target_default: iku.target_default || (iku.kode_iku === '18' ? '1:50' : '100'),
+      satuan_default: iku.satuan_default || (iku.kode_iku === '18' ? 'Rasio' : '%'),
     })
     setEditId(iku.id)
     setModalMode('edit')
@@ -339,6 +350,9 @@ export default function ManajemenIKUPage() {
                       </span>
                     </div>
                   </th>
+                  <th className="px-6 py-4 font-label-sm text-label-sm text-secondary uppercase tracking-wider select-none">
+                    Target & Satuan
+                  </th>
                   <th className="px-6 py-4 font-label-sm text-label-sm text-secondary uppercase tracking-wider text-right select-none">Aksi</th>
                 </tr>
               </thead>
@@ -357,6 +371,11 @@ export default function ManajemenIKUPage() {
                       <span className="bg-success/10 text-success px-2.5 py-1 rounded-lg font-label-sm text-label-sm">{iku.kode_output}</span>
                     </td>
                     <td className="px-6 py-4 text-body-sm text-on-surface-variant max-w-[200px]">{iku.nama_output}</td>
+                    <td className="px-6 py-4">
+                      <span className="px-2.5 py-1 rounded-lg font-bold text-xs bg-purple-100 text-purple-800 border border-purple-200">
+                        {iku.target_default || (iku.kode_iku === '18' ? '1:50' : '100')} {iku.satuan_default || (iku.kode_iku === '18' ? 'Rasio' : '%')}
+                      </span>
+                    </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-1">
                         <button onClick={() => openEdit(iku)}
@@ -518,11 +537,48 @@ export default function ManajemenIKUPage() {
                 ] as [keyof IKUForm, string, string][]).map(([key, label, placeholder]) => (
                   <div key={key} className={key.startsWith('nama') ? 'col-span-2 sm:col-span-1' : ''}>
                     <label className="block font-label-md text-label-md text-on-surface-variant mb-2 uppercase tracking-wider">{label}</label>
-                    <input type="text" placeholder={placeholder} value={form[key]}
+                    <input type="text" placeholder={placeholder} value={form[key] || ''}
                       onChange={e => setForm(prev => ({ ...prev, [key]: e.target.value }))}
                       className="w-full bg-surface-container-lowest border border-outline-variant/50 rounded-xl px-4 py-3 text-body-md outline-none focus:ring-2 focus:ring-primary/20 transition-all" />
                   </div>
                 ))}
+
+                {/* Target & Satuan Default */}
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="block font-label-md text-label-md text-on-surface-variant mb-2 uppercase tracking-wider">
+                    Target Default
+                  </label>
+                  <input 
+                    type="text" 
+                    placeholder="Contoh: 1:50 atau 100" 
+                    value={form.target_default || ''}
+                    onChange={e => setForm(prev => ({ ...prev, target_default: e.target.value }))}
+                    className="w-full bg-surface-container-lowest border border-outline-variant/50 rounded-xl px-4 py-3 text-body-md outline-none focus:ring-2 focus:ring-primary/20 transition-all font-bold" 
+                  />
+                  <p className="text-[11px] text-on-surface-variant/70 mt-1">Bisa berupa rasio (contoh: 1:50) atau persentase (100).</p>
+                </div>
+
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="block font-label-md text-label-md text-on-surface-variant mb-2 uppercase tracking-wider">
+                    Satuan Default
+                  </label>
+                  <input 
+                    type="text" 
+                    list="satuan-options"
+                    placeholder="Contoh: Rasio, %, Dokumen" 
+                    value={form.satuan_default || ''}
+                    onChange={e => setForm(prev => ({ ...prev, satuan_default: e.target.value }))}
+                    className="w-full bg-surface-container-lowest border border-outline-variant/50 rounded-xl px-4 py-3 text-body-md outline-none focus:ring-2 focus:ring-primary/20 transition-all font-semibold" 
+                  />
+                  <datalist id="satuan-options">
+                    <option value="%" />
+                    <option value="Rasio" />
+                    <option value="Dokumen" />
+                    <option value="Kegiatan" />
+                    <option value="Laporan" />
+                    <option value="Mahasiswa" />
+                  </datalist>
+                </div>
               </div>
 
               <div className="flex justify-end gap-3 mt-8">

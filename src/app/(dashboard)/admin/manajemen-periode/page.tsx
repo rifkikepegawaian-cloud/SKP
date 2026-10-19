@@ -78,6 +78,16 @@ export default function ManajemenPeriodePage() {
         is_active: isActive
       })
 
+      // Sync ke master_periode_skp
+      await supabase.from('master_periode_skp').insert({
+        tahun: tahunIku,
+        nama_periode: `Periode SKP & Cascading IKU ${tahunIku}`,
+        tgl_mulai_cascading: tglMulai,
+        tgl_akhir_cascading: tglAkhir,
+        is_active: isActive,
+        status: 'cascading_active'
+      })
+
       if (error) {
         Swal.fire('Error', 'Gagal menyimpan periode', 'error')
       } else {
@@ -92,6 +102,16 @@ export default function ManajemenPeriodePage() {
         tgl_akhir_pengajuan: tglAkhir,
         is_active: isActive
       }).eq('id', selectedPeriod.id)
+
+      // Sync ke master_periode_skp
+      if (isActive) {
+        await supabase.from('master_periode_skp').update({ is_active: false }).neq('id', '00000000-0000-0000-0000-000000000000')
+      }
+      await supabase.from('master_periode_skp').update({
+        tgl_mulai_cascading: tglMulai,
+        tgl_akhir_cascading: tglAkhir,
+        is_active: isActive
+      }).eq('tahun', tahunIku)
 
       if (error) {
         Swal.fire('Error', 'Gagal memperbarui periode', 'error')

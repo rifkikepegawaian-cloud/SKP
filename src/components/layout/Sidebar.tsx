@@ -15,27 +15,12 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { href: '/dashboard',             icon: 'dashboard',             label: 'Dashboard',          roles: ['staff', 'supervisor', 'manajer', 'pimpinan_unit', 'pimpinan_sukpa', 'rektor', 'admin'] },
-  { href: '/perencanaan-skp',       icon: 'assignment',            label: 'Perencanaan SKP',    roles: ['staff', 'supervisor', 'manajer', 'pimpinan_unit', 'pimpinan_sukpa'] },
-  { href: '/logbook',               icon: 'history_edu',           label: 'Logbook',            roles: ['staff', 'supervisor', 'manajer'] },
-  { href: '/monitoring',            icon: 'query_stats',           label: 'Monitoring',         roles: ['supervisor', 'manajer', 'pimpinan_unit', 'pimpinan_sukpa', 'rektor', 'admin'] },
-  { 
-    href: '/iku', 
-    icon: 'corporate_fare', 
-    label: 'IKU Bagian', 
-    roles: ['manajer'],
-    children: [
-      { href: '/iku/pengajuan', icon: 'add_box', label: 'Pengajuan IKU', roles: ['manajer'] },
-      { href: '/iku/riwayat', icon: 'history', label: 'Riwayat Pengajuan', roles: ['manajer'] },
-      { href: '/iku/pelaporan', icon: 'fact_check', label: 'Pelaporan IKU', roles: ['manajer'] },
-      { href: '/iku/monitoring', icon: 'monitoring', label: 'Monitoring IKU', roles: ['manajer'] },
-    ]
-  },
-  { href: '/verifikasi-iku',        icon: 'task_alt',              label: 'Verifikasi IKU',     roles: ['pimpinan_unit', 'admin'] },
-  { href: '/verifikasi-skp',        icon: 'fact_check',            label: 'Verifikasi SKP',     roles: ['supervisor', 'manajer'] },
-  { href: '/admin/manajemen-periode', icon: 'date_range',          label: 'Manajemen Periode',  roles: ['admin'] },
-  { href: '/admin/manajemen-iku',   icon: 'description',           label: 'Manajemen IKU',      roles: ['admin'] },
-  { href: '/admin/manajemen-user',  icon: 'manage_accounts',       label: 'Manajemen User',     roles: ['admin'] },
+  { href: '/dashboard',             icon: 'dashboard',             label: 'Dashboard',             roles: ['staff', 'supervisor', 'manajer', 'pimpinan_unit', 'wakil_pimpinan_unit', 'pimpinan_sukpa', 'rektor', 'admin'] },
+  { href: '/cascading',             icon: 'account_tree',          label: 'Cascading & Rencana SKP', roles: ['staff', 'supervisor', 'manajer', 'pimpinan_unit', 'wakil_pimpinan_unit', 'pimpinan_sukpa', 'rektor', 'admin'] },
+  { href: '/monitoring',            icon: 'query_stats',           label: 'Monitoring Kinerja',    roles: ['supervisor', 'manajer', 'pimpinan_unit', 'wakil_pimpinan_unit', 'pimpinan_sukpa', 'rektor', 'admin'] },
+  { href: '/admin/manajemen-periode', icon: 'date_range',          label: 'Manajemen Periode',     roles: ['admin'] },
+  { href: '/admin/manajemen-iku',   icon: 'description',           label: 'Master 32 IKU',         roles: ['admin'] },
+  { href: '/admin/manajemen-user',  icon: 'manage_accounts',       label: 'Manajemen User',        roles: ['admin'] },
 ]
 
 interface SidebarProps {

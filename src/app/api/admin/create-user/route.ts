@@ -68,14 +68,29 @@ export async function POST(request: NextRequest) {
   }
 
   // Create user row in users table
-  const { error: dbError } = await adminClient
+  const userPayload: Record<string, any> = {
+    id: newAuthUser.user.id,
+    email,
+    role,
+    pegawai_id: pegawaiId,
+  }
+
+  if (role.includes('pimpinan_unit') || role.includes('wakil_pimpinan_unit')) {
+    userPayload.led_unit_es2 = pegawai.unit_es2 || null
+  }
+  if (role.includes('wakil_pimpinan_unit')) {
+    userPayload.led_unit_es3 = pegawai.unit_es3 || null
+  }
+
+  let { error: dbError } = await adminClient
     .from('users')
-    .insert({
-      id: newAuthUser.user.id,
-      email,
-      role,
-      pegawai_id: pegawaiId,
-    })
+    .insert(userPayload)
+
+  if (dbError && dbError.message?.includes('led_unit_es3')) {
+    delete userPayload.led_unit_es3
+    const retry = await adminClient.from('users').insert(userPayload)
+    dbError = retry.error
+  }
 
   if (dbError) {
     // Rollback: delete auth user if db insert fails

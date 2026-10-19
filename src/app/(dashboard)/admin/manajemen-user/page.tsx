@@ -23,6 +23,7 @@ export default function ManajemenPegawaiUserPage() {
   const [selectedRoles, setSelectedRoles] = useState<UserRole[]>(['staff'])
   const [ledUnitEs2, setLedUnitEs2] = useState('')
   const [ledSukpa, setLedSukpa] = useState('')
+  const [ledUnitEs3, setLedUnitEs3] = useState('')
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
 
@@ -177,8 +178,9 @@ export default function ManajemenPegawaiUserPage() {
     setSelectedUser(user)
     const currentRoles = (user.role || '').split(',') as UserRole[]
     setSelectedRoles(currentRoles.length > 0 ? currentRoles : ['staff'])
-    setLedUnitEs2(user.led_unit_es2 || '')
+    setLedUnitEs2(user.led_unit_es2 || user.pegawai?.unit_es2 || '')
     setLedSukpa(user.led_sukpa || '')
+    setLedUnitEs3(user.led_unit_es3 || user.pegawai?.unit_es3 || '')
     setModalMode('edit-role')
   }
 
@@ -192,19 +194,45 @@ export default function ManajemenPegawaiUserPage() {
       showToast('Pilih Unit ES II yang dipimpin untuk role Pimpinan Unit', 'error')
       return
     }
+    if (selectedRoles.includes('wakil_pimpinan_unit')) {
+      if (!ledUnitEs2) {
+        showToast('Pilih Unit ES II untuk role Wakil Pimpinan Unit', 'error')
+        return
+      }
+      if (!ledUnitEs3) {
+        showToast('Pilih Bagian / Bidang ES III untuk role Wakil Pimpinan Unit', 'error')
+        return
+      }
+    }
     if (selectedRoles.includes('pimpinan_sukpa') && !ledSukpa) {
       showToast('Pilih SUKPA yang dipimpin untuk role Pimpinan SUKPA', 'error')
       return
     }
+
     setSaving(true)
     const newRolesString = selectedRoles.join(',')
     const updatePayload: Record<string, string | null> = { role: newRolesString }
-    updatePayload.led_unit_es2 = selectedRoles.includes('pimpinan_unit') ? ledUnitEs2 : null
-    updatePayload.led_sukpa = selectedRoles.includes('pimpinan_sukpa') ? ledSukpa : null
-    const { error } = await supabase
+
+    const isPimpinanUnit = selectedRoles.includes('pimpinan_unit')
+    const isWakilPimpinanUnit = selectedRoles.includes('wakil_pimpinan_unit')
+    const isPimpinanSukpa = selectedRoles.includes('pimpinan_sukpa')
+
+    updatePayload.led_unit_es2 = (isPimpinanUnit || isWakilPimpinanUnit) ? ledUnitEs2 : null
+    updatePayload.led_unit_es3 = isWakilPimpinanUnit ? ledUnitEs3 : null
+    updatePayload.led_sukpa = isPimpinanSukpa ? ledSukpa : null
+
+    let { error } = await supabase
       .from('users')
       .update(updatePayload)
       .eq('id', selectedUser.id)
+
+    // Fallback defensif jika kolom led_unit_es3 belum dieksekusi di database Supabase
+    if (error && error.message.includes('led_unit_es3')) {
+      const fallbackPayload = { ...updatePayload }
+      delete fallbackPayload.led_unit_es3
+      const retry = await supabase.from('users').update(fallbackPayload).eq('id', selectedUser.id)
+      error = retry.error
+    }
 
     if (error) {
       showToast('Gagal mengubah role: ' + error.message, 'error')
@@ -383,12 +411,30 @@ export default function ManajemenPegawaiUserPage() {
   const availablePegawai = pegawaiList.filter(p => !users.some(u => u.pegawai_id === p.id))
   const selectedPegawaiData = pegawaiList.find(p => p.id === createPegawaiId)
 
+  // List of distinct Unit ES II and Unit ES III for dropdowns
+  const allUnitEs2List = Array.from(
+    new Set([
+      ...pegawaiList.map(p => p.unit_es2),
+      ...users.map(u => u.pegawai?.unit_es2),
+      ...users.map(u => u.led_unit_es2)
+    ].filter((v): v is string => Boolean(v && v !== '-')))
+  ).sort()
+
+  const availableUnitEs3List = Array.from(
+    new Set([
+      ...pegawaiList.filter(p => !ledUnitEs2 || p.unit_es2 === ledUnitEs2).map(p => p.unit_es3),
+      ...users.filter(u => !ledUnitEs2 || u.pegawai?.unit_es2 === ledUnitEs2 || u.led_unit_es2 === ledUnitEs2).map(u => u.pegawai?.unit_es3),
+      ...users.map(u => u.led_unit_es3)
+    ].filter((v): v is string => Boolean(v && v !== '-')))
+  ).sort()
+
   const getRoleColor = (role: UserRole) => {
     const colors: Record<UserRole, string> = {
       admin: 'bg-error/10 text-error',
       rektor: 'bg-purple-100 text-purple-700',
       pimpinan_sukpa: 'bg-indigo-100 text-indigo-700',
       pimpinan_unit: 'bg-blue-100 text-blue-700',
+      wakil_pimpinan_unit: 'bg-sky-100 text-sky-700',
       manajer: 'bg-cyan-100 text-cyan-700',
       supervisor: 'bg-teal-100 text-teal-700',
       staff: 'bg-secondary-container text-on-secondary-container',
@@ -431,7 +477,7 @@ export default function ManajemenPegawaiUserPage() {
       </div>
 
       {/* Stats Cards (KPI Widgets at top for high-level dashboard context) */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 mb-6">
         {ALL_ROLES.map(role => {
           const count = users.filter(u => u.role?.split(',').includes(role)).length
           const isActive = filterRole === role
@@ -583,6 +629,31 @@ export default function ManajemenPegawaiUserPage() {
                     <td className="px-6 py-4 text-body-sm text-on-surface-variant max-w-[250px]">
                       {user.pegawai?.unit_es2 || '-'}
                       {user.pegawai?.unit_es3 && user.pegawai.unit_es3 !== '-' && <span className="block text-outline text-[12px]">{user.pegawai.unit_es3}</span>}
+                      {user.role?.includes('wakil_pimpinan_unit') && (user.led_unit_es2 || user.led_unit_es3) && (
+                        <div className="mt-1.5 p-2 rounded-xl bg-sky-50 border border-sky-200 text-[11px] text-sky-800 leading-tight space-y-0.5">
+                          <span className="font-bold flex items-center gap-1 text-[10px] text-sky-700 uppercase">
+                            <span className="material-symbols-outlined text-[13px]">visibility</span> Wilayah Pantauan:
+                          </span>
+                          <span className="block font-semibold">{user.led_unit_es2 || user.pegawai?.unit_es2}</span>
+                          {user.led_unit_es3 && <span className="block text-sky-700 font-medium">Bagian: {user.led_unit_es3}</span>}
+                        </div>
+                      )}
+                      {user.role?.includes('pimpinan_unit') && user.led_unit_es2 && (
+                        <div className="mt-1.5 p-2 rounded-xl bg-blue-50 border border-blue-200 text-[11px] text-blue-800 leading-tight">
+                          <span className="font-bold flex items-center gap-1 text-[10px] text-blue-700 uppercase">
+                            <span className="material-symbols-outlined text-[13px]">corporate_fare</span> Pimpinan Unit:
+                          </span>
+                          <span className="block font-semibold">{user.led_unit_es2}</span>
+                        </div>
+                      )}
+                      {user.role?.includes('pimpinan_sukpa') && user.led_sukpa && (
+                        <div className="mt-1.5 p-2 rounded-xl bg-indigo-50 border border-indigo-200 text-[11px] text-indigo-800 leading-tight">
+                          <span className="font-bold flex items-center gap-1 text-[10px] text-indigo-700 uppercase">
+                            <span className="material-symbols-outlined text-[13px]">school</span> Pimpinan SUKPA:
+                          </span>
+                          <span className="block font-semibold">{user.led_sukpa}</span>
+                        </div>
+                      )}
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex flex-wrap gap-1">
@@ -884,7 +955,7 @@ export default function ManajemenPegawaiUserPage() {
               </div>
 
               {/* ── Hierarki Role: Info Kontekstual ── */}
-              {(selectedRoles.includes('supervisor') || selectedRoles.includes('manajer') || selectedRoles.includes('pimpinan_unit') || selectedRoles.includes('pimpinan_sukpa') || selectedRoles.includes('rektor')) && (
+              {(selectedRoles.includes('supervisor') || selectedRoles.includes('manajer') || selectedRoles.includes('wakil_pimpinan_unit') || selectedRoles.includes('pimpinan_unit') || selectedRoles.includes('pimpinan_sukpa') || selectedRoles.includes('rektor')) && (
                 <div className="mt-5 space-y-3">
                   <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Hierarki Wewenang</p>
 
@@ -912,6 +983,52 @@ export default function ManajemenPegawaiUserPage() {
                     </div>
                   )}
 
+                  {selectedRoles.includes('wakil_pimpinan_unit') && (
+                    <div className="p-3.5 bg-sky-50 border border-sky-200 rounded-2xl space-y-3">
+                      <div className="flex items-start gap-2">
+                        <span className="material-symbols-outlined text-sky-600 text-[18px] mt-0.5">visibility</span>
+                        <div className="text-body-sm">
+                          <p className="font-semibold text-sky-900">Wakil Pimpinan Unit (View Only)</p>
+                          <p className="text-sky-700 text-xs mt-0.5">
+                            Memantau Output IKU dan cascading pada Unit dan Bagian yang dibidangi.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 gap-2.5">
+                        <div>
+                          <label className="block text-[11px] font-bold text-sky-900 mb-1 uppercase tracking-wider">
+                            Unit ES II yang Dibidangi <span className="text-error">*</span>
+                          </label>
+                          <select
+                            value={ledUnitEs2}
+                            onChange={e => setLedUnitEs2(e.target.value)}
+                            className="w-full bg-white border border-sky-300 rounded-xl px-3 py-2 text-body-sm outline-none focus:ring-2 focus:ring-sky-400 font-medium text-on-surface"
+                          >
+                            <option value="">-- Pilih Unit ES II --</option>
+                            {allUnitEs2List.map(unit => (
+                              <option key={unit} value={unit}>{unit}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-bold text-sky-900 mb-1 uppercase tracking-wider">
+                            Bagian / Bidang ES III yang Dibidangi <span className="text-error">*</span>
+                          </label>
+                          <select
+                            value={ledUnitEs3}
+                            onChange={e => setLedUnitEs3(e.target.value)}
+                            className="w-full bg-white border border-sky-300 rounded-xl px-3 py-2 text-body-sm outline-none focus:ring-2 focus:ring-sky-400 font-medium text-on-surface"
+                          >
+                            <option value="">-- Pilih Bagian / Bidang ES III --</option>
+                            {availableUnitEs3List.map(bagian => (
+                              <option key={bagian} value={bagian}>{bagian}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {selectedRoles.includes('pimpinan_unit') && (
                     <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl">
                       <div className="flex items-start gap-2 mb-2">
@@ -924,10 +1041,10 @@ export default function ManajemenPegawaiUserPage() {
                       <select
                         value={ledUnitEs2}
                         onChange={e => setLedUnitEs2(e.target.value)}
-                        className="w-full bg-white border border-blue-300 rounded-xl px-3 py-2 text-body-sm outline-none focus:ring-2 focus:ring-blue-300"
+                        className="w-full bg-white border border-blue-300 rounded-xl px-3 py-2 text-body-sm outline-none focus:ring-2 focus:ring-blue-300 font-medium text-on-surface"
                       >
                         <option value="">-- Pilih Unit Es II yang Dipimpin --</option>
-                        {Array.from(new Set(users.filter(u => u.pegawai?.unit_es2).map(u => u.pegawai!.unit_es2))).sort().map(unit => (
+                        {allUnitEs2List.map(unit => (
                           <option key={unit} value={unit}>{unit}</option>
                         ))}
                       </select>
