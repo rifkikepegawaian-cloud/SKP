@@ -527,7 +527,7 @@ export default function TargetSplitterModal({
                           value={row.namaTugas || ''}
                           onChange={e => handleRowChange(idx, 'namaTugas', e.target.value)}
                           placeholder={taskNamePlaceholder}
-                          className="w-full px-3 py-2 text-xs rounded-xl bg-surface-container border border-outline-variant/50 focus:border-primary focus:outline-none transition-colors"
+                          className="w-full px-3 py-2 text-xs rounded-xl bg-surface-container-lowest border border-outline-variant/60 focus:bg-white focus:border-primary focus:ring-2 focus:ring-primary/20 focus:outline-none transition-all placeholder:text-on-surface-variant/40 text-on-surface hover:border-outline-variant"
                           required
                         />
                         {taskNameSuggestions && taskNameSuggestions.length > 0 && (
@@ -564,7 +564,7 @@ export default function TargetSplitterModal({
                             value={row.target}
                             onChange={e => handleRowChange(idx, 'target', e.target.value)}
                             placeholder="Contoh: 1:50"
-                            className="w-full px-3 py-2 text-xs rounded-xl bg-surface-container border border-outline-variant/50 focus:border-primary focus:outline-none font-bold text-on-surface pr-14"
+                            className="w-full px-3 py-2 text-xs rounded-xl bg-surface-container-lowest border border-outline-variant/60 focus:bg-white focus:border-primary focus:ring-2 focus:ring-primary/20 focus:outline-none font-bold text-on-surface pr-14 transition-all placeholder:text-on-surface-variant/40 hover:border-outline-variant"
                             required
                           />
                         ) : requiresTaskName ? (
@@ -573,7 +573,7 @@ export default function TargetSplitterModal({
                             value={row.target}
                             onChange={e => handleRowChange(idx, 'target', e.target.value)}
                             placeholder="Target..."
-                            className="w-full px-3 py-2 text-xs rounded-xl bg-surface-container border border-outline-variant/50 focus:border-primary focus:outline-none font-bold text-on-surface"
+                            className="w-full px-3 py-2 text-xs rounded-xl bg-surface-container-lowest border border-outline-variant/60 focus:bg-white focus:border-primary focus:ring-2 focus:ring-primary/20 focus:outline-none font-bold text-on-surface transition-all placeholder:text-on-surface-variant/40 hover:border-outline-variant"
                             required
                           />
                         ) : (
@@ -583,7 +583,7 @@ export default function TargetSplitterModal({
                             step="any"
                             value={row.target}
                             onChange={e => handleRowChange(idx, 'target', parseFloat(e.target.value) || 0)}
-                            className="w-full px-3 py-2 text-xs rounded-xl bg-surface-container border border-outline-variant/50 focus:border-primary focus:outline-none font-bold text-on-surface pr-14"
+                            className="w-full px-3 py-2 text-xs rounded-xl bg-surface-container-lowest border border-outline-variant/60 focus:bg-white focus:border-primary focus:ring-2 focus:ring-primary/20 focus:outline-none font-bold text-on-surface pr-14 transition-all hover:border-outline-variant"
                             required
                           />
                         )}
@@ -608,7 +608,7 @@ export default function TargetSplitterModal({
                             onChange={e => handleRowChange(idx, 'satuan', e.target.value)}
                             placeholder="Contoh: Berkas, Laporan..."
                             list={`satuan-suggestions-${idx}`}
-                            className="w-full px-3 py-2 text-xs rounded-xl bg-surface-container border border-outline-variant/50 focus:border-primary focus:outline-none font-semibold text-on-surface"
+                            className="w-full px-3 py-2 text-xs rounded-xl bg-surface-container-lowest border border-outline-variant/60 focus:bg-white focus:border-primary focus:ring-2 focus:ring-primary/20 focus:outline-none font-semibold text-on-surface transition-all placeholder:text-on-surface-variant/40 hover:border-outline-variant"
                             required
                           />
                           <datalist id={`satuan-suggestions-${idx}`}>

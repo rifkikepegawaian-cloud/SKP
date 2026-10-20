@@ -175,7 +175,7 @@ export default function PelaporanCapaianModal({
                 value={capaian}
                 onChange={e => setCapaian(e.target.value)}
                 placeholder="Contoh: 10"
-                className="w-full px-3.5 py-2.5 text-xs rounded-xl bg-surface-container border border-outline-variant/50 focus:border-primary focus:outline-none font-bold text-on-surface pr-16"
+                className="w-full px-3.5 py-2.5 text-xs rounded-xl bg-surface-container-lowest border border-outline-variant/60 focus:bg-white focus:border-primary focus:ring-2 focus:ring-primary/20 focus:outline-none font-bold text-on-surface pr-16 transition-all placeholder:text-on-surface-variant/40 hover:border-outline-variant"
                 required
               />
               <span className="absolute right-3.5 top-2.5 text-xs text-on-surface-variant font-medium pointer-events-none">
@@ -194,7 +194,7 @@ export default function PelaporanCapaianModal({
               value={keterangan}
               onChange={e => setKeterangan(e.target.value)}
               placeholder="Jelaskan aktivitas, kegiatan, atau dokumen yang telah diselesaikan untuk mencapai target tersebut..."
-              className="w-full px-3.5 py-2.5 text-xs rounded-xl bg-surface-container border border-outline-variant/50 focus:border-primary focus:outline-none transition-colors leading-relaxed resize-none"
+              className="w-full px-3.5 py-2.5 text-xs rounded-xl bg-surface-container-lowest border border-outline-variant/60 focus:bg-white focus:border-primary focus:ring-2 focus:ring-primary/20 focus:outline-none transition-all leading-relaxed resize-none text-on-surface placeholder:text-on-surface-variant/40 hover:border-outline-variant"
               required
             />
           </div>

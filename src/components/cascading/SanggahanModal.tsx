@@ -101,7 +101,7 @@ export default function SanggahanModal({
               value={catatan}
               onChange={e => setCatatan(e.target.value)}
               placeholder="Jelaskan kendala, analisis beban kerja, atau alasan mengapa target/uraian tugas ini perlu disesuaikan..."
-              className="w-full px-3.5 py-2.5 text-xs rounded-xl bg-surface-container border border-outline-variant/50 focus:border-primary focus:outline-none transition-colors leading-relaxed resize-none"
+              className="w-full px-3.5 py-2.5 text-xs rounded-xl bg-surface-container-lowest border border-outline-variant/60 focus:bg-white focus:border-primary focus:ring-2 focus:ring-primary/20 focus:outline-none transition-all leading-relaxed resize-none text-on-surface placeholder:text-on-surface-variant/40 hover:border-outline-variant"
               required
             />
           </div>
@@ -116,7 +116,7 @@ export default function SanggahanModal({
               value={targetUsulan}
               onChange={e => setTargetUsulan(e.target.value)}
               placeholder={typeof currentTarget === 'string' && currentTarget.includes(':') ? 'Contoh: 1:60' : 'Contoh: 80 atau 1:60'}
-              className="w-full px-3.5 py-2 text-xs rounded-xl bg-surface-container border border-outline-variant/50 focus:border-primary focus:outline-none font-bold text-on-surface"
+              className="w-full px-3.5 py-2 text-xs rounded-xl bg-surface-container-lowest border border-outline-variant/60 focus:bg-white focus:border-primary focus:ring-2 focus:ring-primary/20 focus:outline-none font-bold text-on-surface transition-all placeholder:text-on-surface-variant/40 hover:border-outline-variant"
             />
             <p className="text-[10px] text-on-surface-variant">
               Biarkan kosong jika keberatan Anda berfokus pada substansi uraian tugas daripada angka target.
