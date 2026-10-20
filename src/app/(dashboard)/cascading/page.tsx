@@ -245,7 +245,7 @@ export default function CascadingSKPPage() {
         supabase.from('cascading_iku_sukpa').select('*, iku:master_iku(*), assigned_by_user:users!assigned_by(*, pegawai(*)), sukpa_user:users!sukpa_user_id(*, pegawai(*))'),
         supabase.from('cascading_iku_unit').select('*, parent_sukpa:cascading_iku_sukpa(*, iku:master_iku(*)), assigned_by_user:users!assigned_by(*, pegawai(*)), unit_user:users!unit_user_id(*, pegawai(*))'),
         supabase.from('cascading_output_manajer').select('*, parent_unit:cascading_iku_unit(*, parent_sukpa:cascading_iku_sukpa(*, iku:master_iku(*))), assigned_by_user:users!assigned_by(*, pegawai(*)), manajer_user:users!manajer_user_id(*, pegawai(*))'),
-        supabase.from('cascading_uraian_spv').select('*, parent_output:cascading_output_manajer(*, manajer_user:users!manajer_user_id(*, pegawai(*)), parent_unit:cascading_iku_unit(*, unit_user:users!unit_user_id(*, pegawai(*)))), assigned_by_user:users!assigned_by(*, pegawai(*)), spv_user:users!spv_user_id(*, pegawai(*))'),
+        supabase.from('cascading_uraian_spv').select('*, parent_output:cascading_output_manajer(*, manajer_user:users!manajer_user_id(*, pegawai(*)), parent_unit:cascading_iku_unit(*, unit_user:users!unit_user_id(*, pegawai(*)), parent_sukpa:cascading_iku_sukpa(*, iku:master_iku(*)))), assigned_by_user:users!assigned_by(*, pegawai(*)), spv_user:users!spv_user_id(*, pegawai(*))'),
         supabase.from('cascading_sub_uraian_staff').select('*, parent_uraian:cascading_uraian_spv(*), assigned_by_user:users!assigned_by(*, pegawai(*)), staff_user:users!staff_user_id(*, pegawai(*))'),
         supabase.from('cascading_laporan_kerja').select('*, user:users!user_id(*, pegawai(*)), reviewer:users!reviewed_by(*, pegawai(*))').order('created_at', { ascending: false }),
       ])
@@ -1369,6 +1369,21 @@ export default function CascadingSKPPage() {
                       </div>
                     )}
 
+                    {/* Header info jika role supervisor */}
+                    {role === 'supervisor' && (
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-on-surface-variant font-medium bg-surface-container-low p-3.5 rounded-2xl border border-outline-variant/30">
+                        <div className="flex items-center gap-2">
+                          <span className="w-6 h-6 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center font-bold text-xs">
+                            <span className="material-symbols-outlined text-sm">task_alt</span>
+                          </span>
+                          <span>Uraian Tugas yang <b>Telah Anda Sepakati</b> (Siap Dibuatkan Sub-Uraian Tugas ke Staf Pelaksana)</span>
+                        </div>
+                        <span className="text-[11px] text-emerald-800 bg-emerald-100 px-3 py-1 rounded-xl font-bold border border-emerald-200">
+                          Buat Sub-Uraian Tugas & Target Pelaksana Staf
+                        </span>
+                      </div>
+                    )}
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {incomingTasks.filter(t => t.status === 'agreed').map((item: any) => {
                         const relatedUraians = role === 'manajer' 
@@ -1377,7 +1392,11 @@ export default function CascadingSKPPage() {
                             ? subUraianAssignments.filter(s => s.parent_uraian_id === item.id)
                             : []
 
-                        const parentIkuName = item.parent_unit?.parent_sukpa?.iku?.nama_iku || item.parent_sukpa?.iku?.nama_iku
+                        const parentIkuName = role === 'supervisor'
+                          ? (item.parent_output?.parent_unit?.parent_sukpa?.iku?.nama_iku || item.parent_output?.parent_unit?.iku?.nama_iku)
+                          : (item.parent_unit?.parent_sukpa?.iku?.nama_iku || item.parent_sukpa?.iku?.nama_iku)
+
+                        const parentOutputName = role === 'supervisor' ? item.parent_output?.nama_output : null
 
                         return (
                           <div 
@@ -1401,15 +1420,21 @@ export default function CascadingSKPPage() {
                                 <h4 className="text-sm font-bold text-on-surface leading-snug">
                                   {item.nama_sub_uraian || item.nama_uraian || item.nama_output || item.parent_sukpa?.iku?.nama_iku || item.iku?.nama_iku}
                                 </h4>
-                                {parentIkuName && (
+                                {parentOutputName && (
                                   <p className="text-[11px] text-on-surface-variant font-medium mt-1 flex items-center gap-1">
+                                    <span className="material-symbols-outlined text-[13px] text-primary">output</span>
+                                    Output: {parentOutputName}
+                                  </p>
+                                )}
+                                {parentIkuName && (
+                                  <p className="text-[11px] text-on-surface-variant font-medium mt-0.5 flex items-center gap-1">
                                     <span className="material-symbols-outlined text-[13px] text-primary">flag</span>
                                     IKU: {parentIkuName}
                                   </p>
                                 )}
                               </div>
 
-                              {/* Daftar Uraian Tugas SPV yang sudah dibuat di bawah output ini */}
+                              {/* Daftar Uraian Tugas SPV yang sudah dibuat di bawah output ini (Manajer) */}
                               {role === 'manajer' && (
                                 <div className="p-3 rounded-xl bg-surface-container-low border border-outline-variant/30 space-y-2">
                                   <div className="flex items-center justify-between text-[11px]">
@@ -1447,6 +1472,45 @@ export default function CascadingSKPPage() {
                                   )}
                                 </div>
                               )}
+
+                              {/* Daftar Sub-Uraian Tugas Staf yang sudah dibuat di bawah uraian tugas ini (Supervisor) */}
+                              {role === 'supervisor' && (
+                                <div className="p-3 rounded-xl bg-surface-container-low border border-outline-variant/30 space-y-2">
+                                  <div className="flex items-center justify-between text-[11px]">
+                                    <span className="font-bold text-on-surface flex items-center gap-1">
+                                      <span className="material-symbols-outlined text-xs text-primary">assignment</span>
+                                      Sub-Uraian Tugas Staf ({relatedUraians.length})
+                                    </span>
+                                  </div>
+
+                                  {relatedUraians.length === 0 ? (
+                                    <p className="text-[11px] text-on-surface-variant/70 italic">
+                                      Belum ada Sub-Uraian Tugas yang didelegasikan ke Staf Pelaksana.
+                                    </p>
+                                  ) : (
+                                    <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                                      {relatedUraians.map((s: any) => (
+                                        <div key={s.id} className="p-2 rounded-lg bg-white border border-outline-variant/30 flex items-center justify-between gap-2 text-xs">
+                                          <div className="min-w-0">
+                                            <p className="font-semibold text-on-surface line-clamp-1">{s.nama_sub_uraian}</p>
+                                            <p className="text-[10px] text-on-surface-variant">
+                                              Staf: <span className="font-medium text-primary">{s.staff_user?.pegawai?.nama_lengkap || s.staff_user?.email}</span>
+                                            </p>
+                                          </div>
+                                          <div className="text-right shrink-0">
+                                            <span className="font-bold text-xs text-on-surface block">{s.target} {s.satuan}</span>
+                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                                              s.status === 'agreed' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                                            }`}>
+                                              {s.status === 'agreed' ? 'Disepakati' : 'Menunggu Staf'}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                             </div>
 
                             <div className="pt-2 border-t border-outline-variant/20 flex items-center justify-end">
@@ -1459,11 +1523,13 @@ export default function CascadingSKPPage() {
                                 className="px-3.5 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary/90 flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
                               >
                                 <span className="material-symbols-outlined text-sm">
-                                  {role === 'manajer' ? 'add_task' : 'call_split'}
+                                  {role === 'manajer' || role === 'supervisor' ? 'add_task' : 'call_split'}
                                 </span>
                                 {role === 'manajer' 
                                   ? (relatedUraians.length > 0 ? '+ Tambah Uraian Tugas SPV' : '+ Buat Uraian Tugas SPV')
-                                  : 'Bagi Target ke Bawahan'}
+                                  : role === 'supervisor'
+                                    ? (relatedUraians.length > 0 ? '+ Tambah Sub-Uraian Tugas Staf' : '+ Buat Sub-Uraian Tugas Staf')
+                                    : 'Bagi Target ke Bawahan'}
                               </button>
                             </div>
                           </div>
