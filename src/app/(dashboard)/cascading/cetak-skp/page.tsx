@@ -1,8 +1,10 @@
 'use client'
 
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 import { useCascading } from '@/context/CascadingContext'
-import { ROLE_LABELS } from '@/lib/types'
+import { ROLE_LABELS, NilaiPerilakuItem } from '@/lib/types'
+import { ASPEK_BERAKHLAK } from '@/lib/constants/perilakuKerja'
+import { createClient } from '@/lib/supabase/client'
 
 export default function CetakDokumenSKPPage() {
   const {
@@ -12,6 +14,60 @@ export default function CetakDokumenSKPPage() {
     isLoading,
     agreedTasksForSKP,
   } = useCascading()
+
+  const [perilakuMap, setPerilakuMap] = useState<Record<number, NilaiPerilakuItem>>(() => {
+    const defaults: Record<number, NilaiPerilakuItem> = {}
+    ASPEK_BERAKHLAK.forEach(a => {
+      defaults[a.id] = {
+        aspek_id: a.id,
+        ekspektasi_khusus: a.defaultEkspektasi,
+        rating: 'sesuai_ekspektasi',
+      }
+    })
+    return defaults
+  })
+
+  useEffect(() => {
+    if (!user) return
+    const periodeId = periode?.id || 'default_periode'
+    const storageKey = `skp_perilaku_${periodeId}_${user.id}`
+    const saved = localStorage.getItem(storageKey)
+    if (saved) {
+      try {
+        setPerilakuMap(JSON.parse(saved))
+      } catch (e) {
+        console.error(e)
+      }
+    } else {
+      // Try from supabase
+      const loadSupabase = async () => {
+        try {
+          const supabase = createClient()
+          const { data } = await supabase
+            .from('skp_perilaku_kerja')
+            .select('*')
+            .eq('periode_id', periodeId)
+            .eq('user_id', user.id)
+          if (data && data.length > 0) {
+            const loaded: Record<number, NilaiPerilakuItem> = {}
+            ASPEK_BERAKHLAK.forEach(a => {
+              const row = data.find((r: any) => r.aspek_id === a.id)
+              loaded[a.id] = {
+                aspek_id: a.id,
+                ekspektasi_khusus: row?.ekspektasi_khusus || a.defaultEkspektasi,
+                rating: row?.rating || 'sesuai_ekspektasi',
+                umpan_balik: row?.umpan_balik || '',
+              }
+            })
+            setPerilakuMap(loaded)
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+      loadSupabase()
+    }
+  }, [user, periode?.id])
 
   if (isLoading) {
     return (
@@ -214,6 +270,51 @@ export default function CetakDokumenSKPPage() {
               </table>
             </div>
           )}
+        </div>
+
+        {/* IV. PERILAKU KERJA (Format Resmi Lampiran PermenPAN-RB No. 6/2022) */}
+        <div className="space-y-2">
+          <div className="overflow-x-auto border border-on-surface text-xs">
+            {/* Table Header exactly matching user's scan */}
+            <div className="bg-[#c2d7f2] font-black p-2 border-b border-on-surface text-black tracking-wide">
+              PERILAKU KERJA*
+            </div>
+            <table className="w-full text-left border-collapse">
+              <tbody>
+                {ASPEK_BERAKHLAK.map((aspek, idx) => (
+                  <tr key={aspek.id} className="border-b border-on-surface last:border-b-0">
+                    <td className="w-8 p-2.5 text-center align-top border-r border-on-surface font-bold">
+                      {idx + 1}
+                    </td>
+                    <td className="p-2.5 align-top border-r border-on-surface w-1/2">
+                      <p className="font-bold text-on-surface capitalize mb-1">
+                        {aspek.nama}
+                      </p>
+                      <ul className="space-y-0.5 text-on-surface text-[11px]">
+                        {aspek.panduan.map((pd, pIndex) => (
+                          <li key={pIndex} className="flex items-start">
+                            <span className="mr-1.5">-</span>
+                            <span>{pd}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </td>
+                    <td className="p-2.5 align-top w-1/2 space-y-1">
+                      <p className="font-bold text-on-surface text-[11px]">
+                        Ekspektasi Khusus Pimpinan:
+                      </p>
+                      <p className="text-on-surface font-medium text-[11px] leading-relaxed">
+                        {perilakuMap[aspek.id]?.ekspektasi_khusus || aspek.defaultEkspektasi}
+                      </p>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-[10px] text-on-surface-variant italic">
+            * Sesuai Format Lampiran PermenPAN-RB No. 6 Tahun 2022 tentang Pengelolaan Kinerja Pegawai Aparatur Sipil Negara.
+          </p>
         </div>
 
         {/* Tanda Tangan */}

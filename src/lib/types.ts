@@ -381,3 +381,41 @@ export interface IKULaporan {
   // joins
   item?: IKUPengajuanItem
 }
+
+// ────────────────────────────────────────────────────────────
+// PERILAKU KERJA (CORE VALUES ASN BerAKHLAK - PermenPAN-RB No. 6 Tahun 2022)
+// ────────────────────────────────────────────────────────────
+
+export type RatingPerilaku = 'di_atas_ekspektasi' | 'sesuai_ekspektasi' | 'di_bawah_ekspektasi'
+
+export interface AspekBerakhlakDef {
+  id: number
+  nama: string
+  tagline: string
+  icon: string
+  color: string
+  panduan: string[]
+  defaultEkspektasi: string
+}
+
+export interface NilaiPerilakuItem {
+  aspek_id: number
+  ekspektasi_khusus: string
+  rating: RatingPerilaku
+  umpan_balik?: string
+}
+
+export interface SKPPerilakuKerja {
+  id?: string
+  periode_id: string
+  user_id: string
+  penilai_user_id?: string
+  aspek_id: number
+  aspek_nama: string
+  ekspektasi_khusus: string
+  rating: RatingPerilaku
+  umpan_balik?: string
+  created_at?: string
+  updated_at?: string
+}
+

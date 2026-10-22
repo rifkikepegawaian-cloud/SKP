@@ -25,6 +25,7 @@ const NAV_ITEMS: NavItem[] = [
       { href: '/cascading/penugasan',      icon: 'call_split',   label: 'Penugasan ke Bawahan',         roles: ['supervisor', 'manajer', 'pimpinan_unit', 'wakil_pimpinan_unit', 'pimpinan_sukpa', 'rektor', 'admin'] },
       { href: '/cascading/dialog-kinerja', icon: 'forum',        label: 'Tugas Masuk & Dialog Kinerja', roles: ['staff', 'supervisor', 'manajer', 'pimpinan_unit', 'wakil_pimpinan_unit', 'pimpinan_sukpa', 'admin'] },
       { href: '/cascading/matriks',        icon: 'hub',          label: 'Matriks & Pohon Cascading',    roles: ['staff', 'supervisor', 'manajer', 'pimpinan_unit', 'wakil_pimpinan_unit', 'pimpinan_sukpa', 'rektor', 'admin'] },
+      { href: '/cascading/perilaku-kerja', icon: 'psychology',   label: 'Perilaku Kerja',               roles: ['staff', 'supervisor', 'manajer', 'pimpinan_unit', 'wakil_pimpinan_unit', 'pimpinan_sukpa', 'rektor', 'admin'] },
       { href: '/cascading/cetak-skp',      icon: 'print',        label: 'Cetak Dokumen Rencana SKP',    roles: ['staff', 'supervisor', 'manajer', 'pimpinan_unit', 'wakil_pimpinan_unit', 'pimpinan_sukpa', 'rektor', 'admin'] },
     ]
   },
