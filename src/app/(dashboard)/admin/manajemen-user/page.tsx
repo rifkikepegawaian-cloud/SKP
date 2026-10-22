@@ -463,7 +463,7 @@ export default function ManajemenPegawaiUserPage() {
           externalCount: json.externalCount,
           isLoadingStats: false,
           logs: [
-            `Terhubung ke Supabase Eksternal (${json.externalUrl}).`,
+            'Terhubung ke Server Supabase Eksternal.',
             `Ditemukan ${json.externalCount.toLocaleString()} data master pegawai eksternal.`,
             `Database aplikasi lokal saat ini memiliki ${json.localCount.toLocaleString()} pegawai.`,
             json.externalCount > json.localCount 
@@ -471,9 +471,6 @@ export default function ManajemenPegawaiUserPage() {
               : 'Seluruh data pegawai siap disinkronkan & diperbarui jabatannya.',
           ],
         }))
-        if (!syncCustomUrl && json.externalUrl) {
-          setSyncCustomUrl(json.externalUrl)
-        }
       } else {
         setSyncStats(s => ({
           ...s,
@@ -1481,7 +1478,7 @@ export default function ManajemenPegawaiUserPage() {
                 </div>
                 <div>
                   <h3 className="font-headline-md text-headline-md font-bold text-white">Sinkronisasi Database Eksternal</h3>
-                  <p className="text-white/80 text-body-sm text-[12px]">Master Kepegawaian (wdpeggurglqkzylhorng.supabase.co)</p>
+                  <p className="text-white/80 text-body-sm text-[12px]">Master Data Kepegawaian Terpusat</p>
                 </div>
               </div>
               <button 
@@ -1628,7 +1625,7 @@ export default function ManajemenPegawaiUserPage() {
                         type="text" 
                         value={syncCustomUrl}
                         onChange={e => setSyncCustomUrl(e.target.value)}
-                        placeholder="https://wdpeggurglqkzylhorng.supabase.co"
+                        placeholder="https://your-project.supabase.co"
                         disabled={syncStats.isSyncing}
                         className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl px-3 py-2 text-[12px] font-mono outline-none focus:ring-2 focus:ring-emerald-500/20"
                       />
@@ -1638,10 +1635,10 @@ export default function ManajemenPegawaiUserPage() {
                         Anon Public Key
                       </label>
                       <input 
-                        type="text" 
+                        type="password" 
                         value={syncCustomKey}
                         onChange={e => setSyncCustomKey(e.target.value)}
-                        placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6..."
+                        placeholder="Masukkan Anon Key baru jika ingin mengubah..."
                         disabled={syncStats.isSyncing}
                         className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl px-3 py-2 text-[12px] font-mono outline-none focus:ring-2 focus:ring-emerald-500/20"
                       />

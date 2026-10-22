@@ -7,8 +7,16 @@ export async function GET(req: NextRequest) {
     const localKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     const localSupabase = createClient(localUrl, localKey)
 
-    const externalUrl = process.env.NEXT_PUBLIC_EXTERNAL_SUPABASE_URL || 'https://wdpeggurglqkzylhorng.supabase.co'
-    const externalKey = process.env.NEXT_PUBLIC_EXTERNAL_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndkcGVnZ3VyZ2xxa3p5bGhvcm5nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgyNTk5MzIsImV4cCI6MjA5MzgzNTkzMn0.hAi6BqDk0mH-kRwD4Zvfa1N7OiXApYNAc59gfxgpHhk'
+    const externalUrl = process.env.EXTERNAL_SUPABASE_URL || process.env.NEXT_PUBLIC_EXTERNAL_SUPABASE_URL
+    const externalKey = process.env.EXTERNAL_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_EXTERNAL_SUPABASE_ANON_KEY
+
+    if (!externalUrl || !externalKey) {
+      return NextResponse.json({
+        success: false,
+        error: 'Kredensial Supabase eksternal (EXTERNAL_SUPABASE_URL / EXTERNAL_SUPABASE_ANON_KEY) belum dikonfigurasi di Environment Variables server.',
+      }, { status: 400 })
+    }
+
     const externalSupabase = createClient(externalUrl, externalKey)
 
     const [{ count: localCount }, { count: externalCount }] = await Promise.all([
@@ -20,7 +28,6 @@ export async function GET(req: NextRequest) {
       success: true,
       localCount: localCount || 0,
       externalCount: externalCount || 0,
-      externalUrl,
     })
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 })
@@ -37,8 +44,15 @@ export async function POST(req: NextRequest) {
     const localKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     const localSupabase = createClient(localUrl, localKey)
 
-    const externalUrl = body.customUrl?.trim() || process.env.NEXT_PUBLIC_EXTERNAL_SUPABASE_URL || 'https://wdpeggurglqkzylhorng.supabase.co'
-    const externalKey = body.customKey?.trim() || process.env.NEXT_PUBLIC_EXTERNAL_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndkcGVnZ3VyZ2xxa3p5bGhvcm5nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgyNTk5MzIsImV4cCI6MjA5MzgzNTkzMn0.hAi6BqDk0mH-kRwD4Zvfa1N7OiXApYNAc59gfxgpHhk'
+    const externalUrl = body.customUrl?.trim() || process.env.EXTERNAL_SUPABASE_URL || process.env.NEXT_PUBLIC_EXTERNAL_SUPABASE_URL
+    const externalKey = body.customKey?.trim() || process.env.EXTERNAL_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_EXTERNAL_SUPABASE_ANON_KEY
+
+    if (!externalUrl || !externalKey) {
+      return NextResponse.json({
+        success: false,
+        error: 'Kredensial Supabase eksternal belum dikonfigurasi di Environment Variables.',
+      }, { status: 400 })
+    }
     const externalSupabase = createClient(externalUrl, externalKey)
 
     // 1. Total count
