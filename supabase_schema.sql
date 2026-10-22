@@ -19,6 +19,7 @@ create table if not exists pegawai (
   unit_es3      text not null default '',
   unit_es4      text not null default '',
   jabatan       text not null default '',
+  pangkat_golongan text default '',
   tmt_jabatan   date,
   created_at    timestamptz default now()
 );

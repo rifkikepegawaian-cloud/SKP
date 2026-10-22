@@ -40,6 +40,7 @@ export interface Pegawai {
   unit_es3: string
   unit_es4: string
   jabatan?: string
+  pangkat_golongan?: string
   tmt_jabatan?: string
   created_at: string
 }

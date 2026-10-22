@@ -65,6 +65,7 @@ export default function CetakDokumenSKPPage() {
       ...prev,
       nama: user.pegawai?.nama_lengkap || user.email || prev.nama,
       nip: user.pegawai?.nip || prev.nip,
+      pangkatGol: user.pegawai?.pangkat_golongan || prev.pangkatGol,
       jabatan: user.pegawai?.jabatan || ROLE_LABELS[role] || prev.jabatan,
       unitKerja: user.pegawai?.unit_es2 || prev.unitKerja,
     }))
@@ -75,7 +76,7 @@ export default function CetakDokumenSKPPage() {
       setPenilaiProfile({
         nama: firstAssignedByUser.pegawai.nama_lengkap || DEFAULT_PENILAI_MONA.nama,
         nip: firstAssignedByUser.pegawai.nip || DEFAULT_PENILAI_MONA.nip,
-        pangkatGol: 'Setara Penata Muda/ Set. III/a',
+        pangkatGol: firstAssignedByUser.pegawai.pangkat_golongan || 'Setara Penata Muda/ Set. III/a',
         jabatan: firstAssignedByUser.pegawai.jabatan || ROLE_LABELS[firstAssignedByUser.role as UserRole] || DEFAULT_PENILAI_MONA.jabatan,
         unitKerja: firstAssignedByUser.pegawai.unit_es2 || user.pegawai?.unit_es2 || DEFAULT_PENILAI_MONA.unitKerja,
       })
