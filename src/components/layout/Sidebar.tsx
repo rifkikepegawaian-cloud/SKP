@@ -30,6 +30,17 @@ const NAV_ITEMS: NavItem[] = [
     ]
   },
   { href: '/pelaporan-capaian',     icon: 'fact_check',            label: 'Pelaporan & Verifikasi Capaian', roles: ['staff', 'supervisor', 'manajer', 'pimpinan_unit', 'wakil_pimpinan_unit', 'pimpinan_sukpa', 'rektor', 'admin'] },
+  { 
+    href: '/evaluasi-kinerja',     
+    icon: 'rate_review',            
+    label: 'Evaluasi Kinerja', 
+    roles: ['staff', 'supervisor', 'manajer', 'pimpinan_unit', 'wakil_pimpinan_unit', 'pimpinan_sukpa', 'rektor', 'admin'],
+    children: [
+      { href: '/evaluasi-kinerja/hasil-kerja', icon: 'assessment',     label: 'Hasil Kerja',                  roles: ['staff', 'supervisor', 'manajer', 'pimpinan_unit', 'wakil_pimpinan_unit', 'pimpinan_sukpa', 'rektor', 'admin'] },
+      { href: '/evaluasi-kinerja/perilaku',    icon: 'psychology_alt', label: 'Evaluasi Perilaku',            roles: ['staff', 'supervisor', 'manajer', 'pimpinan_unit', 'wakil_pimpinan_unit', 'pimpinan_sukpa', 'rektor', 'admin'] },
+      { href: '/evaluasi-kinerja/cetak',       icon: 'print',          label: 'Cetak Dokumen Evaluasi SKP',   roles: ['staff', 'supervisor', 'manajer', 'pimpinan_unit', 'wakil_pimpinan_unit', 'pimpinan_sukpa', 'rektor', 'admin'] },
+    ]
+  },
   { href: '/monitoring',            icon: 'query_stats',           label: 'Monitoring Kinerja',    roles: ['supervisor', 'manajer', 'pimpinan_unit', 'wakil_pimpinan_unit', 'pimpinan_sukpa', 'rektor', 'admin'] },
   { href: '/admin/manajemen-periode', icon: 'date_range',          label: 'Manajemen Periode',     roles: ['admin'] },
   { href: '/admin/manajemen-iku',   icon: 'description',           label: 'Master 32 IKU',         roles: ['admin'] },
@@ -44,7 +55,7 @@ export default function Sidebar({ role = 'staff' }: SidebarProps) {
   const pathname = usePathname()
   const isSidebarOpen = useUIStore(state => state.isSidebarOpen)
   const toggleSidebar = useUIStore(state => state.toggleSidebar)
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ '/cascading': true })
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ '/cascading': true, '/evaluasi-kinerja': true })
 
   const toggleGroup = (href: string) => {
     setOpenGroups(prev => ({ ...prev, [href]: !prev[href] }))
