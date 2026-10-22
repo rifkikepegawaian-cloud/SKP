@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { User, Pegawai, UserRole, ROLE_LABELS, ALL_ROLES } from '@/lib/types'
 import { parseExcelToPegawai } from '@/lib/excel'
 
-type ModalMode = 'closed' | 'edit-role' | 'reset-pw' | 'delete' | 'create' | 'import'
+type ModalMode = 'closed' | 'edit-role' | 'reset-pw' | 'delete' | 'create' | 'import' | 'sync-external'
 
 interface UserWithPegawai extends Omit<User, 'pegawai'> {
   pegawai: Pegawai | null
@@ -44,6 +44,35 @@ export default function ManajemenPegawaiUserPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importProgress, setImportProgress] = useState({ current: 0, total: 0, show: false, errors: [] as string[] })
+
+  // Sync Supabase Eksternal state
+  const [syncStats, setSyncStats] = useState<{
+    localCount: number
+    externalCount: number
+    processed: number
+    inserted: number
+    updated: number
+    isLoadingStats: boolean
+    isSyncing: boolean
+    progress: number
+    logs: string[]
+    supportsPangkat: boolean | null
+  }>({
+    localCount: 0,
+    externalCount: 0,
+    processed: 0,
+    inserted: 0,
+    updated: 0,
+    isLoadingStats: false,
+    isSyncing: false,
+    progress: 0,
+    logs: [],
+    supportsPangkat: null,
+  })
+  const [syncCustomUrl, setSyncCustomUrl] = useState('')
+  const [syncCustomKey, setSyncCustomKey] = useState('')
+  const [showAdvancedSync, setShowAdvancedSync] = useState(false)
+  const syncCancelRef = useRef(false)
 
   const showToast = (message: string, type: 'success' | 'error') => {
     setToast({ message, type })
@@ -407,6 +436,162 @@ export default function ManajemenPegawaiUserPage() {
     setSaving(false)
   }
 
+  // ── Sync Supabase Eksternal Handlers ──
+  const openSyncModal = async () => {
+    setModalMode('sync-external')
+    setSyncStats({
+      localCount: pegawaiList.length,
+      externalCount: 0,
+      processed: 0,
+      inserted: 0,
+      updated: 0,
+      isLoadingStats: true,
+      isSyncing: false,
+      progress: 0,
+      logs: ['Menghubungkan ke database eksternal...'],
+      supportsPangkat: null,
+    })
+    syncCancelRef.current = false
+
+    try {
+      const res = await fetch('/api/sync-pegawai')
+      const json = await res.json()
+      if (json.success) {
+        setSyncStats(s => ({
+          ...s,
+          localCount: json.localCount,
+          externalCount: json.externalCount,
+          isLoadingStats: false,
+          logs: [
+            `Terhubung ke Supabase Eksternal (${json.externalUrl}).`,
+            `Ditemukan ${json.externalCount.toLocaleString()} data master pegawai eksternal.`,
+            `Database aplikasi lokal saat ini memiliki ${json.localCount.toLocaleString()} pegawai.`,
+            json.externalCount > json.localCount 
+              ? `Terdapat estimasi +${(json.externalCount - json.localCount).toLocaleString()} pegawai baru yang siap dimasukkan.`
+              : 'Seluruh data pegawai siap disinkronkan & diperbarui jabatannya.',
+          ],
+        }))
+        if (!syncCustomUrl && json.externalUrl) {
+          setSyncCustomUrl(json.externalUrl)
+        }
+      } else {
+        setSyncStats(s => ({
+          ...s,
+          isLoadingStats: false,
+          logs: [`Gagal memuat status: ${json.error || 'Terjadi kesalahan'}`],
+        }))
+      }
+    } catch (err: any) {
+      setSyncStats(s => ({
+        ...s,
+        isLoadingStats: false,
+        logs: [`Gagal menghubungi server: ${err.message}`],
+      }))
+    }
+  }
+
+  const handleStartSync = async () => {
+    syncCancelRef.current = false
+    setSyncStats(s => ({
+      ...s,
+      isSyncing: true,
+      processed: 0,
+      inserted: 0,
+      updated: 0,
+      progress: 0,
+      logs: ['Memulai proses sinkronisasi master pegawai...'],
+    }))
+
+    const batchSize = 250
+    let offset = 0
+    let totalInserted = 0
+    let totalUpdated = 0
+    let totalProcessed = 0
+    let batchIndex = 1
+    let hasMore = true
+    let detectedPangkat: boolean | null = null
+
+    try {
+      while (hasMore) {
+        if (syncCancelRef.current) {
+          setSyncStats(s => ({
+            ...s,
+            isSyncing: false,
+            logs: [...s.logs, '⚠️ Sinkronisasi dihentikan oleh pengguna.'],
+          }))
+          break
+        }
+
+        const res = await fetch('/api/sync-pegawai', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            offset,
+            limit: batchSize,
+            customUrl: syncCustomUrl || undefined,
+            customKey: syncCustomKey || undefined,
+          }),
+        })
+
+        const data = await res.json()
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || 'Terjadi kesalahan saat memproses batch.')
+        }
+
+        totalInserted += data.inserted || 0
+        totalUpdated += data.updated || 0
+        totalProcessed += data.processed || 0
+        if (data.supportsPangkat !== undefined) {
+          detectedPangkat = data.supportsPangkat
+        }
+
+        const totalExt = data.totalExternal || syncStats.externalCount || totalProcessed
+        const currentProgress = totalExt > 0 ? Math.min(100, Math.round((totalProcessed / totalExt) * 100)) : 100
+
+        setSyncStats(s => ({
+          ...s,
+          processed: totalProcessed,
+          inserted: totalInserted,
+          updated: totalUpdated,
+          progress: currentProgress,
+          supportsPangkat: detectedPangkat,
+          logs: [
+            ...s.logs.slice(-15),
+            `[Batch #${batchIndex}] Data ke-${offset + 1} s/d ${offset + data.processed}: +${data.inserted} baru, ~${data.updated} diupdate.`,
+          ],
+        }))
+
+        hasMore = Boolean(data.hasMore && data.processed > 0)
+        offset += data.processed
+        batchIndex++
+      }
+
+      if (!syncCancelRef.current) {
+        setSyncStats(s => ({
+          ...s,
+          isSyncing: false,
+          progress: 100,
+          logs: [
+            ...s.logs,
+            `✅ Selesai! Berhasil memproses ${totalProcessed.toLocaleString()} data pegawai.`,
+            `Total Pegawai Baru Ditambahkan: +${totalInserted.toLocaleString()}`,
+            `Total Pegawai Diperbarui: ~${totalUpdated.toLocaleString()}`,
+          ],
+        }))
+        showToast(`Sinkronisasi selesai! +${totalInserted} baru, ~${totalUpdated} diupdate.`, 'success')
+        fetchPegawai()
+        fetchUsers()
+      }
+    } catch (err: any) {
+      setSyncStats(s => ({
+        ...s,
+        isSyncing: false,
+        logs: [...s.logs, `❌ Gagal: ${err.message}`],
+      }))
+      showToast('Gagal sinkronisasi: ' + err.message, 'error')
+    }
+  }
+
   // Pegawai who don't have accounts yet
   const availablePegawai = pegawaiList.filter(p => !users.some(u => u.pegawai_id === p.id))
   const selectedPegawaiData = pegawaiList.find(p => p.id === createPegawaiId)
@@ -462,7 +647,13 @@ export default function ManajemenPegawaiUserPage() {
           <h2 className="font-headline-lg text-headline-lg text-on-surface">Manajemen Pegawai & User</h2>
           <p className="text-body-md text-secondary mt-1">Kelola data pegawai, hak akses, ubah role, hingga import Excel massal.</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <button 
+            onClick={openSyncModal}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl font-label-md text-label-md flex items-center gap-2 shadow-lg shadow-emerald-600/20 transition-all cursor-pointer">
+            <span className="material-symbols-outlined text-[20px]">sync</span>
+            Sinkron Supabase Eksternal
+          </button>
           <button onClick={() => { setImportFile(null); setImportProgress({ current: 0, total: 0, show: false, errors: [] }); setModalMode('import') }}
             className="bg-surface-container-high text-on-surface px-5 py-2.5 rounded-xl font-label-md text-label-md flex items-center gap-2 hover:bg-surface-container-highest transition-colors border border-outline-variant/30 shadow-sm">
             <span className="material-symbols-outlined text-[20px]">upload_file</span>
@@ -665,7 +856,17 @@ export default function ManajemenPegawaiUserPage() {
                       </div>
                     </td>
                     <td className="px-6 py-4 text-body-sm text-on-surface-variant max-w-[200px]">
-                      {user.pegawai?.jabatan || <span className="text-outline/50">-</span>}
+                      <div className="font-medium text-on-surface">
+                        {user.pegawai?.jabatan || <span className="text-outline/50">-</span>}
+                      </div>
+                      {user.pegawai?.pangkat_golongan && (
+                        <div className="mt-1">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <span className="material-symbols-outlined text-[13px]">military_tech</span>
+                            {user.pegawai.pangkat_golongan}
+                          </span>
+                        </div>
+                      )}
                       {user.pegawai?.tmt_jabatan && <span className="block text-outline text-[11px] mt-0.5">TMT: {user.pegawai.tmt_jabatan}</span>}
                     </td>
                     <td className="px-6 py-4 text-right">
@@ -1259,6 +1460,228 @@ export default function ManajemenPegawaiUserPage() {
                   className="px-6 py-2.5 rounded-xl bg-primary text-on-primary font-label-md shadow-lg shadow-primary/20 hover:opacity-90 transition-all disabled:opacity-50 flex items-center gap-2">
                   {saving && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>}
                   Buat Akun
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL: Sinkron Supabase Eksternal ── */}
+      {modalMode === 'sync-external' && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center p-4" onClick={() => !syncStats.isSyncing && setModalMode('closed')}>
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
+          <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[92vh] overflow-hidden flex flex-col animate-slide-up" onClick={e => e.stopPropagation()}>
+            
+            {/* Header */}
+            <div className="p-6 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center shadow-inner">
+                  <span className="material-symbols-outlined text-[24px]">cloud_sync</span>
+                </div>
+                <div>
+                  <h3 className="font-headline-md text-headline-md font-bold text-white">Sinkronisasi Database Eksternal</h3>
+                  <p className="text-white/80 text-body-sm text-[12px]">Master Kepegawaian (wdpeggurglqkzylhorng.supabase.co)</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => {
+                  if (syncStats.isSyncing) {
+                    syncCancelRef.current = true
+                  }
+                  setModalMode('closed')
+                }}
+                className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-white/20 text-white transition-colors">
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto space-y-5">
+              
+              {/* Database Overview Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="p-4 rounded-2xl bg-surface-container-low border border-outline-variant/30">
+                  <p className="text-outline text-[11px] uppercase tracking-wider font-semibold">Database Lokal</p>
+                  <p className="text-2xl font-extrabold text-on-surface mt-1">
+                    {syncStats.localCount.toLocaleString()}
+                  </p>
+                  <p className="text-[12px] text-secondary mt-0.5">Pegawai terdaftar</p>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200">
+                  <p className="text-emerald-800 text-[11px] uppercase tracking-wider font-semibold">Database Eksternal</p>
+                  <p className="text-2xl font-extrabold text-emerald-700 mt-1">
+                    {syncStats.isLoadingStats ? (
+                      <span className="inline-block w-5 h-5 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin"></span>
+                    ) : (
+                      syncStats.externalCount.toLocaleString()
+                    )}
+                  </p>
+                  <p className="text-[12px] text-emerald-700 mt-0.5">Master SDM aktif</p>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200">
+                  <p className="text-amber-800 text-[11px] uppercase tracking-wider font-semibold">Potensi Pegawai Baru</p>
+                  <p className="text-2xl font-extrabold text-amber-700 mt-1">
+                    {syncStats.isLoadingStats ? (
+                      <span className="inline-block w-5 h-5 border-2 border-amber-600 border-t-transparent rounded-full animate-spin"></span>
+                    ) : (
+                      `+${Math.max(0, syncStats.externalCount - syncStats.localCount).toLocaleString()}`
+                    )}
+                  </p>
+                  <p className="text-[12px] text-amber-700 mt-0.5">Akan otomatis di-insert</p>
+                </div>
+              </div>
+
+              {/* Information Alert */}
+              <div className="p-4 rounded-2xl bg-blue-50/70 border border-blue-200/80 text-blue-900 text-body-sm space-y-2">
+                <div className="flex items-center gap-2 font-bold text-blue-950 text-label-md">
+                  <span className="material-symbols-outlined text-[20px] text-blue-600">info</span>
+                  Mekanisme Sinkronisasi Cerdas:
+                </div>
+                <ul className="list-disc list-inside space-y-1 text-blue-800 text-[13px] pl-1">
+                  <li><strong>Update Pegawai Eksis (by NIP):</strong> Data nama, jabatan, unit eselon (II, III, IV), serta pangkat & golongan akan diperbarui sesuai master database.</li>
+                  <li><strong>Deteksi Pegawai Baru:</strong> Jika terdapat pegawai baru di database eksternal yang belum ada di database lokal, sistem akan langsung menambahkannya ke tabel <code>pegawai</code>.</li>
+                  <li><strong>Keamanan Akun:</strong> Akun login, password, dan role yang telah diset pada sistem tidak akan terhapus ataupun ter-reset.</li>
+                </ul>
+              </div>
+
+              {/* Pangkat Kolom Notice */}
+              {syncStats.supportsPangkat === false && (
+                <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-body-sm">
+                  <div className="flex items-center gap-2 font-bold text-amber-950 mb-1">
+                    <span className="material-symbols-outlined text-[18px] text-amber-600">lightbulb</span>
+                    Tips: Mengaktifkan Kolom Pangkat & Golongan
+                  </div>
+                  <p className="text-[12px] text-amber-800 leading-relaxed">
+                    Kolom <code>pangkat_golongan</code> belum ada di tabel <code>pegawai</code> database lokal Anda. Sinkronisasi tetap berhasil untuk nama, NIP, dan jabatan. Jika ingin menyimpan pangkat & golongan, silakan jalankan perintah SQL berikut di Supabase SQL Editor:
+                  </p>
+                  <div className="mt-2 p-2.5 bg-white/80 rounded-xl font-mono text-[11px] text-amber-950 border border-amber-300/60 select-all">
+                    ALTER TABLE pegawai ADD COLUMN IF NOT EXISTS pangkat_golongan text;
+                  </div>
+                </div>
+              )}
+
+              {/* Progress Section */}
+              {(syncStats.isSyncing || syncStats.progress > 0) && (
+                <div className="space-y-2 p-4 rounded-2xl bg-surface-container-low border border-outline-variant/30">
+                  <div className="flex items-center justify-between text-body-sm">
+                    <span className="font-semibold text-on-surface flex items-center gap-2">
+                      {syncStats.isSyncing && (
+                        <span className="w-3.5 h-3.5 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin"></span>
+                      )}
+                      {syncStats.isSyncing ? 'Sedang Memproses Batch...' : 'Proses Sinkronisasi'}
+                    </span>
+                    <span className="font-bold text-emerald-700">{syncStats.progress}%</span>
+                  </div>
+                  <div className="h-2.5 bg-surface-container-highest rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-300 rounded-full"
+                      style={{ width: `${syncStats.progress}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-[11px] text-secondary font-mono pt-1">
+                    <span>Diproses: {syncStats.processed.toLocaleString()} data</span>
+                    <span className="text-emerald-700 font-semibold">+{syncStats.inserted.toLocaleString()} baru</span>
+                    <span className="text-teal-700 font-semibold">~{syncStats.updated.toLocaleString()} diupdate</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Live Log Terminal */}
+              <div className="rounded-2xl bg-neutral-900 text-neutral-200 p-4 font-mono text-[12px] shadow-inner max-h-48 overflow-y-auto space-y-1.5 border border-neutral-800">
+                <div className="flex items-center justify-between pb-2 mb-2 border-b border-neutral-800 text-[11px] text-neutral-400">
+                  <span className="flex items-center gap-1.5 font-bold">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    LOG AKTIVITAS SINKRONISASI
+                  </span>
+                  <span>{syncStats.logs.length} catatan</span>
+                </div>
+                {syncStats.logs.map((log, idx) => (
+                  <div key={idx} className="leading-relaxed break-words text-neutral-300">
+                    <span className="text-neutral-500 select-none mr-2">&gt;</span>
+                    {log}
+                  </div>
+                ))}
+              </div>
+
+              {/* Advanced Settings Toggle */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowAdvancedSync(!showAdvancedSync)}
+                  className="text-[12px] font-semibold text-outline hover:text-on-surface flex items-center gap-1 transition-colors">
+                  <span className="material-symbols-outlined text-[16px]">
+                    {showAdvancedSync ? 'expand_less' : 'tune'}
+                  </span>
+                  {showAdvancedSync ? 'Sembunyikan Pengaturan Koneksi' : 'Kustomisasi URL / API Key Eksternal (Opsional)'}
+                </button>
+
+                {showAdvancedSync && (
+                  <div className="mt-3 p-4 rounded-2xl bg-surface-container-lowest border border-outline-variant/30 space-y-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">
+                        URL Supabase Eksternal
+                      </label>
+                      <input 
+                        type="text" 
+                        value={syncCustomUrl}
+                        onChange={e => setSyncCustomUrl(e.target.value)}
+                        placeholder="https://wdpeggurglqkzylhorng.supabase.co"
+                        disabled={syncStats.isSyncing}
+                        className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl px-3 py-2 text-[12px] font-mono outline-none focus:ring-2 focus:ring-emerald-500/20"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">
+                        Anon Public Key
+                      </label>
+                      <input 
+                        type="text" 
+                        value={syncCustomKey}
+                        onChange={e => setSyncCustomKey(e.target.value)}
+                        placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6..."
+                        disabled={syncStats.isSyncing}
+                        className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl px-3 py-2 text-[12px] font-mono outline-none focus:ring-2 focus:ring-emerald-500/20"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-5 border-t border-outline-variant/20 flex items-center justify-between bg-surface-container-lowest">
+              <span className="text-[11px] text-secondary">
+                {syncStats.isSyncing ? 'Sinkronisasi berjalan di background...' : 'Siap melakukan batch update & insert'}
+              </span>
+              <div className="flex items-center gap-3">
+                <button 
+                  onClick={() => {
+                    if (syncStats.isSyncing) {
+                      syncCancelRef.current = true
+                    }
+                    setModalMode('closed')
+                  }}
+                  className="px-5 py-2.5 rounded-xl border border-outline-variant/50 text-on-surface-variant font-label-md text-label-md hover:bg-surface-container transition-all">
+                  {syncStats.isSyncing ? 'Hentikan & Tutup' : 'Tutup'}
+                </button>
+                <button 
+                  onClick={handleStartSync} 
+                  disabled={syncStats.isSyncing || syncStats.isLoadingStats}
+                  className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-label-md text-label-md shadow-lg shadow-emerald-600/20 transition-all disabled:opacity-50 flex items-center gap-2 cursor-pointer">
+                  {syncStats.isSyncing ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      Sinkronisasi Berjalan...
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-[20px]">sync</span>
+                      Mulai Sinkronisasi Sekarang
+                    </>
+                  )}
                 </button>
               </div>
             </div>
