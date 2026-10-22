@@ -1,8 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { User, ROLE_LABELS, MasterPeriodeSKP } from '@/lib/types'
 import { ASPEK_BERAKHLAK } from '@/lib/constants/perilakuKerja'
+import {
+  SAMPLE_HASIL_KERJA_UTAMA,
+  DEFAULT_PEGAWAI_RIFKI,
+  DEFAULT_PENILAI_MONA,
+} from '@/lib/constants/skpTemplateRifki'
 
 interface DokumenSKPModalProps {
   isOpen: boolean
@@ -13,10 +18,11 @@ interface DokumenSKPModalProps {
   tasks: Array<{
     id: string
     title: string
-    target: number
+    target: number | string
     satuan: string
     parentTitle?: string
     isDirectSync?: boolean
+    indikatorKinerja?: string
   }>
 }
 
@@ -28,262 +34,308 @@ export default function DokumenSKPModal({
   atasanUser,
   tasks,
 }: DokumenSKPModalProps) {
-  const [isSigned, setIsSigned] = useState(true)
-
   if (!isOpen) return null
 
   const handlePrint = () => {
     window.print()
   }
 
-  const currentDate = new Date().toLocaleDateString('id-ID', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  })
+  const periodeTahun = periode?.tahun || '2025'
+  const periodeMulai = periode?.tgl_mulai_cascading || `03 Januari ${periodeTahun}`
+  const periodeAkhir = periode?.tgl_akhir_cascading || `31 Desember ${periodeTahun}`
+
+  // Determine tasks to display
+  const displayTasks = tasks.length > 0 ? tasks : SAMPLE_HASIL_KERJA_UTAMA
+
+  // Pegawai Info
+  const namaPegawai = pegawaiUser?.pegawai?.nama_lengkap || pegawaiUser?.email || DEFAULT_PEGAWAI_RIFKI.nama
+  const nipPegawai = pegawaiUser?.pegawai?.nip || DEFAULT_PEGAWAI_RIFKI.nip
+  const pangkatPegawai = 'Setara Penata Muda/ Set. III/a'
+  const jabatanPegawai = pegawaiUser?.pegawai?.jabatan || DEFAULT_PEGAWAI_RIFKI.jabatan
+  const unitPegawai = pegawaiUser?.pegawai?.unit_es2 || DEFAULT_PEGAWAI_RIFKI.unitKerja
+
+  // Atasan Info
+  const namaPenilai = atasanUser?.pegawai?.nama_lengkap || atasanUser?.email || DEFAULT_PENILAI_MONA.nama
+  const nipPenilai = atasanUser?.pegawai?.nip || DEFAULT_PENILAI_MONA.nip
+  const pangkatPenilai = 'Setara Penata Muda/ Set. III/a'
+  const jabatanPenilai = atasanUser?.pegawai?.jabatan || DEFAULT_PENILAI_MONA.jabatan
+  const unitPenilai = atasanUser?.pegawai?.unit_es2 || DEFAULT_PENILAI_MONA.unitKerja
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in print:p-0 print:bg-white print:static">
-      <div 
-        className="w-full max-w-4xl max-h-[95vh] flex flex-col rounded-3xl bg-white shadow-2xl border border-outline-variant/30 overflow-hidden print:max-w-none print:max-h-none print:shadow-none print:border-none print:rounded-none"
-      >
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in print:p-0 print:bg-white print:static">
+      <div className="w-full max-w-5xl max-h-[94vh] flex flex-col rounded-3xl bg-white shadow-2xl border border-outline-variant/30 overflow-hidden print:max-w-none print:max-h-none print:shadow-none print:border-none print:rounded-none">
+        
         {/* Modal Controls (Hidden in Print) */}
         <div className="px-6 py-4 border-b border-outline-variant/30 bg-surface-container-lowest flex items-center justify-between print:hidden">
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-primary text-xl">description</span>
             <span className="font-bold text-sm text-on-surface">Dokumen Rencana SKP Resmi</span>
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-success/15 text-success">
-              Disepakati Bersama
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+              Format PermenPAN-RB No. 6/2022
             </span>
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={handlePrint}
-              className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-primary hover:bg-primary/90 flex items-center gap-1.5 shadow-md shadow-primary/20 transition-all"
+              className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-primary hover:bg-primary/90 flex items-center gap-1.5 shadow-md shadow-primary/20 transition-all cursor-pointer"
             >
               <span className="material-symbols-outlined text-sm">print</span>
               Cetak Dokumen
             </button>
             <button
               onClick={onClose}
-              className="w-9 h-9 rounded-full hover:bg-surface-container flex items-center justify-center text-on-surface-variant transition-colors"
+              className="w-9 h-9 rounded-full hover:bg-surface-container flex items-center justify-center text-on-surface-variant transition-colors cursor-pointer"
             >
               <span className="material-symbols-outlined text-lg">close</span>
             </button>
           </div>
         </div>
 
-        {/* Printable Document Body */}
-        <div className="p-8 md:p-12 overflow-y-auto space-y-6 text-on-surface font-sans print:p-0 print:overflow-visible">
-          {/* Header Lembaga */}
-          <div className="border-b-2 border-on-surface pb-4 text-center space-y-1">
-            <h2 className="text-base font-extrabold uppercase tracking-wide">
-              KEMENTERIAN PENDIDIKAN TINGGI, SAINS, DAN TEKNOLOGI
-            </h2>
-            <h1 className="text-lg font-black uppercase tracking-wider text-primary print:text-black">
-              UNIVERSITAS DIPONEGORO
+        {/* Printable Document Body (Exact Match to Rencana SKP Rifki.pdf) */}
+        <div className="p-8 md:p-12 overflow-y-auto space-y-4 text-black font-sans print:p-0 print:overflow-visible text-xs">
+          {/* Header Title */}
+          <div className="text-center space-y-1 pb-1">
+            <h1 className="text-sm md:text-base font-black tracking-wide uppercase">
+              SASARAN KINERJA PEGAWAI
             </h1>
-            <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant print:text-black">
-              RENCANA SASARAN KINERJA PEGAWAI (SKP)
-            </p>
-            <p className="text-[11px] text-on-surface-variant print:text-black">
-              Periode Penilaian: <b>{periode?.tgl_mulai_cascading || '1 Januari 2026'}</b> s.d. <b>{periode?.tgl_akhir_cascading || '31 Desember 2026'}</b> (Tahun {periode?.tahun || '2026'})
-            </p>
+            <h2 className="text-xs md:text-sm font-bold tracking-wide uppercase leading-snug">
+              PENDEKATAN HASIL KERJA KUALITATIF<br />BAGI PEJABAT ADMINISTRASI/ FUNGSIONAL
+            </h2>
           </div>
 
-          {/* Pegawai & Atasan Penilai Tables */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs border border-on-surface/40 rounded-xl p-4 bg-surface-container-lowest/50">
-            {/* Kolom Pegawai Yang Dinilai */}
-            <div className="space-y-2">
-              <h4 className="font-bold uppercase text-[11px] pb-1 border-b border-outline-variant text-primary print:text-black">
-                I. Pegawai yang Dinilai
-              </h4>
-              <table className="w-full text-left space-y-1">
-                <tbody>
-                  <tr>
-                    <td className="w-24 text-on-surface-variant font-medium">Nama</td>
-                    <td className="w-3">:</td>
-                    <td className="font-bold">{pegawaiUser?.pegawai?.nama_lengkap || pegawaiUser?.email || '-'}</td>
-                  </tr>
-                  <tr>
-                    <td className="text-on-surface-variant font-medium">NIP</td>
-                    <td>:</td>
-                    <td>{pegawaiUser?.pegawai?.nip || '-'}</td>
-                  </tr>
-                  <tr>
-                    <td className="text-on-surface-variant font-medium">Jabatan</td>
-                    <td>:</td>
-                    <td>{pegawaiUser?.pegawai?.jabatan || pegawaiUser?.role || '-'}</td>
-                  </tr>
-                  <tr>
-                    <td className="text-on-surface-variant font-medium">Unit Kerja</td>
-                    <td>:</td>
-                    <td>{pegawaiUser?.pegawai?.unit_es2 || 'Universitas Diponegoro'}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            {/* Kolom Pejabat Penilai Kinerja */}
-            <div className="space-y-2">
-              <h4 className="font-bold uppercase text-[11px] pb-1 border-b border-outline-variant text-primary print:text-black">
-                II. Pejabat Penilai Kinerja
-              </h4>
-              <table className="w-full text-left space-y-1">
-                <tbody>
-                  <tr>
-                    <td className="w-24 text-on-surface-variant font-medium">Nama</td>
-                    <td className="w-3">:</td>
-                    <td className="font-bold">{atasanUser?.pegawai?.nama_lengkap || atasanUser?.email || 'Atasan Langsung'}</td>
-                  </tr>
-                  <tr>
-                    <td className="text-on-surface-variant font-medium">NIP</td>
-                    <td>:</td>
-                    <td>{atasanUser?.pegawai?.nip || '-'}</td>
-                  </tr>
-                  <tr>
-                    <td className="text-on-surface-variant font-medium">Jabatan</td>
-                    <td>:</td>
-                    <td>{atasanUser?.pegawai?.jabatan || atasanUser?.role || 'Pejabat Penilai'}</td>
-                  </tr>
-                  <tr>
-                    <td className="text-on-surface-variant font-medium">Unit Kerja</td>
-                    <td>:</td>
-                    <td>{atasanUser?.pegawai?.unit_es2 || 'Universitas Diponegoro'}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+          {/* Institution & Period Header */}
+          <div className="flex justify-between items-center font-bold text-xs pt-2 pb-1 border-t-2 border-black">
+            <span>UNIVERSITAS DIPONEGORO</span>
+            <span className="uppercase">
+              PERIODE PENILAIAN: {periodeMulai} S.D. {periodeAkhir}
+            </span>
           </div>
 
-          {/* Tabel Rencana SKP */}
-          <div className="space-y-2">
-            <h4 className="font-bold uppercase text-xs text-on-surface">
-              III. Rencana Kinerja & Target Hasil Kesepakatan Cascading
-            </h4>
-            <div className="border border-on-surface/40 rounded-xl overflow-hidden">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-surface-container text-on-surface border-b border-on-surface/40 font-bold uppercase text-[10px]">
-                  <tr>
-                    <th className="p-2.5 border-r border-on-surface/40 w-10 text-center">No</th>
-                    <th className="p-2.5 border-r border-on-surface/40">Rencana Kinerja Atasan yang Diintervensi</th>
-                    <th className="p-2.5 border-r border-on-surface/40">Rencana Kinerja Individu (IKU / Output / Uraian)</th>
-                    <th className="p-2.5 border-r border-on-surface/40 w-24 text-center">Target</th>
-                    <th className="p-2.5 w-24 text-center">Satuan</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-on-surface/20">
-                  {tasks.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="p-4 text-center text-on-surface-variant italic">
-                        Belum ada tugas yang disepakati untuk dimasukkan ke dalam SKP Rencana.
-                      </td>
-                    </tr>
-                  ) : (
-                    tasks.map((task, idx) => (
-                      <tr key={task.id} className="hover:bg-surface-container-lowest">
-                        <td className="p-2.5 border-r border-on-surface/30 text-center font-medium">{idx + 1}</td>
-                        <td className="p-2.5 border-r border-on-surface/30 text-on-surface-variant text-[11px]">
-                          {task.parentTitle || 'Mendukung Sasaran Strategis Institusi'}
-                        </td>
-                        <td className="p-2.5 border-r border-on-surface/30 font-bold text-on-surface">
-                          {task.title}
-                        </td>
-                        <td className="p-2.5 border-r border-on-surface/30 text-center font-bold text-primary print:text-black">
-                          {task.target}
-                        </td>
-                        <td className="p-2.5 text-center font-medium">
-                          {task.satuan}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+          {/* Tabel Identitas Pegawai & Pejabat Penilai Kinerja (2 Kolom) */}
+          <div className="border border-black overflow-hidden">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-[#c2d7f2] border-b border-black font-bold text-center">
+                  <th className="p-1.5 w-8 border-r border-black text-center">NO</th>
+                  <th className="p-1.5 border-r border-black w-[45%] text-left uppercase">
+                    PEGAWAI YANG DINILAI
+                  </th>
+                  <th className="p-1.5 w-8 border-r border-black text-center">NO</th>
+                  <th className="p-1.5 w-[45%] text-left uppercase">
+                    PEJABAT PENILAI KINERJA
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {/* 1. Nama */}
+                <tr className="border-b border-black">
+                  <td className="p-1.5 text-center border-r border-black font-bold">1</td>
+                  <td className="p-1.5 border-r border-black">
+                    <div className="flex">
+                      <span className="w-40 font-bold">NAMA</span>
+                      <span className="w-3">:</span>
+                      <span className="flex-1 font-bold">{namaPegawai}</span>
+                    </div>
+                  </td>
+                  <td className="p-1.5 text-center border-r border-black font-bold">1</td>
+                  <td className="p-1.5">
+                    <div className="flex">
+                      <span className="w-40 font-bold">NAMA</span>
+                      <span className="w-3">:</span>
+                      <span className="flex-1 font-bold">{namaPenilai}</span>
+                    </div>
+                  </td>
+                </tr>
+
+                {/* 2. NPPU */}
+                <tr className="border-b border-black">
+                  <td className="p-1.5 text-center border-r border-black font-bold">2</td>
+                  <td className="p-1.5 border-r border-black">
+                    <div className="flex">
+                      <span className="w-40 font-bold">NPPU</span>
+                      <span className="w-3">:</span>
+                      <span className="flex-1 font-mono">{nipPegawai}</span>
+                    </div>
+                  </td>
+                  <td className="p-1.5 text-center border-r border-black font-bold">2</td>
+                  <td className="p-1.5">
+                    <div className="flex">
+                      <span className="w-40 font-bold">NPPU</span>
+                      <span className="w-3">:</span>
+                      <span className="flex-1 font-mono">{nipPenilai}</span>
+                    </div>
+                  </td>
+                </tr>
+
+                {/* 3. Pangkat / Gol. Ruang */}
+                <tr className="border-b border-black">
+                  <td className="p-1.5 text-center border-r border-black font-bold">3</td>
+                  <td className="p-1.5 border-r border-black">
+                    <div className="flex">
+                      <span className="w-40 font-bold">PANGKAT/ GOL. RUANG</span>
+                      <span className="w-3">:</span>
+                      <span className="flex-1">{pangkatPegawai}</span>
+                    </div>
+                  </td>
+                  <td className="p-1.5 text-center border-r border-black font-bold">3</td>
+                  <td className="p-1.5">
+                    <div className="flex">
+                      <span className="w-40 font-bold">PANGKAT/ GOL. RUANG</span>
+                      <span className="w-3">:</span>
+                      <span className="flex-1">{pangkatPenilai}</span>
+                    </div>
+                  </td>
+                </tr>
+
+                {/* 4. Jabatan */}
+                <tr className="border-b border-black">
+                  <td className="p-1.5 text-center border-r border-black font-bold">4</td>
+                  <td className="p-1.5 border-r border-black">
+                    <div className="flex">
+                      <span className="w-40 font-bold">JABATAN</span>
+                      <span className="w-3">:</span>
+                      <span className="flex-1">{jabatanPegawai}</span>
+                    </div>
+                  </td>
+                  <td className="p-1.5 text-center border-r border-black font-bold">4</td>
+                  <td className="p-1.5">
+                    <div className="flex">
+                      <span className="w-40 font-bold">JABATAN</span>
+                      <span className="w-3">:</span>
+                      <span className="flex-1">{jabatanPenilai}</span>
+                    </div>
+                  </td>
+                </tr>
+
+                {/* 5. Unit Kerja */}
+                <tr>
+                  <td className="p-1.5 text-center border-r border-black font-bold">5</td>
+                  <td className="p-1.5 border-r border-black">
+                    <div className="flex">
+                      <span className="w-40 font-bold">UNIT KERJA</span>
+                      <span className="w-3">:</span>
+                      <span className="flex-1">{unitPegawai}</span>
+                    </div>
+                  </td>
+                  <td className="p-1.5 text-center border-r border-black font-bold">5</td>
+                  <td className="p-1.5">
+                    <div className="flex">
+                      <span className="w-40 font-bold">UNIT KERJA</span>
+                      <span className="w-3">:</span>
+                      <span className="flex-1">{unitPenilai}</span>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
 
-          {/* IV. PERILAKU KERJA (Format Resmi Lampiran PermenPAN-RB No. 6/2022) */}
-          <div className="space-y-2">
-            <div className="overflow-x-auto border border-on-surface text-xs">
-              <div className="bg-[#c2d7f2] font-black p-2 border-b border-on-surface text-black tracking-wide">
-                PERILAKU KERJA*
-              </div>
-              <table className="w-full text-left border-collapse">
-                <tbody>
-                  {ASPEK_BERAKHLAK.map((aspek, idx) => (
-                    <tr key={aspek.id} className="border-b border-on-surface last:border-b-0">
-                      <td className="w-8 p-2.5 text-center align-top border-r border-on-surface font-bold">
+          {/* Tabel HASIL KERJA */}
+          <div className="border border-black overflow-hidden">
+            <div className="bg-[#c2d7f2] font-black p-1.5 border-b border-black text-black tracking-wide uppercase">
+              HASIL KERJA
+            </div>
+            <div className="font-bold p-1.5 border-b border-black bg-white uppercase">
+              A. UTAMA
+            </div>
+
+            <table className="w-full text-left border-collapse">
+              <tbody>
+                {displayTasks.map((task, idx) => (
+                  <React.Fragment key={task.id || idx}>
+                    <tr className="border-b border-black">
+                      <td className="w-8 p-1.5 text-center align-top border-r border-black font-bold">
                         {idx + 1}
                       </td>
-                      <td className="p-2.5 align-top border-r border-on-surface w-1/2">
-                        <p className="font-bold text-on-surface capitalize mb-1">
-                          {aspek.nama}
-                        </p>
-                        <ul className="space-y-0.5 text-on-surface text-[11px]">
-                          {aspek.panduan.map((pd, pIndex) => (
-                            <li key={pIndex} className="flex items-start">
-                              <span className="mr-1.5">-</span>
-                              <span>{pd}</span>
-                            </li>
-                          ))}
-                        </ul>
+                      <td className="p-1.5 align-top font-semibold leading-relaxed">
+                        {task.title}
                       </td>
-                      <td className="p-2.5 align-top w-1/2 space-y-1">
-                        <p className="font-bold text-on-surface text-[11px]">
-                          Ekspektasi Khusus Pimpinan:
+                    </tr>
+                    <tr className="border-b border-black">
+                      <td className="p-1.5 border-r border-black bg-neutral-50/50"></td>
+                      <td className="p-1.5 pl-4 align-top space-y-0.5 leading-relaxed bg-neutral-50/30">
+                        <p className="font-bold italic text-[11px]">
+                          Ukuran keberhasilan/ Indikator Kinerja Individu, Target, dan Perspektif :
                         </p>
-                        <p className="text-on-surface font-medium text-[11px] leading-relaxed">
-                          {aspek.defaultEkspektasi}
+                        <p className="text-[11px] leading-relaxed">
+                          {task.indikatorKinerja ||
+                            `Terprosesnya ${task.title} sebanyak ${task.target || 100} ${task.satuan || '%'} diproses 100%`}
                         </p>
                       </td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </React.Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Tabel PERILAKU KERJA */}
+          <div className="border border-black overflow-hidden break-before-page">
+            <div className="bg-[#c2d7f2] font-black p-1.5 border-b border-black text-black tracking-wide">
+              PERILAKU KERJA*
             </div>
-            <p className="text-[10px] text-on-surface-variant italic">
-              * Sesuai Format Lampiran PermenPAN-RB No. 6 Tahun 2022 tentang Pengelolaan Kinerja Pegawai Aparatur Sipil Negara.
-            </p>
+
+            <table className="w-full text-left border-collapse">
+              <tbody>
+                {ASPEK_BERAKHLAK.map((aspek, idx) => (
+                  <tr key={aspek.id} className="border-b border-black last:border-b-0">
+                    <td className="w-8 p-1.5 text-center align-top border-r border-black font-bold">
+                      {idx + 1}
+                    </td>
+                    <td className="p-1.5 align-top border-r border-black w-1/2">
+                      <p className="font-bold text-black capitalize mb-0.5">
+                        {aspek.nama}
+                      </p>
+                      <ul className="space-y-0.5 text-black text-[11px]">
+                        {aspek.panduan.map((pd, pIndex) => (
+                          <li key={pIndex} className="flex items-start">
+                            <span className="mr-1.5">-</span>
+                            <span className="leading-tight">{pd}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </td>
+                    <td className="p-1.5 align-top w-1/2 space-y-0.5">
+                      <p className="font-bold text-black text-[11px]">
+                        Ekspektasi Khusus Pimpinan:
+                      </p>
+                      <p className="text-black font-medium text-[11px] leading-relaxed">
+                        {aspek.defaultEkspektasi}
+                      </p>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
 
           {/* Lembar Pengesahan & Tanda Tangan */}
-          <div className="pt-6 border-t border-on-surface/30 text-xs">
-            <p className="text-right pb-4 text-on-surface-variant print:text-black">
-              Semarang, {currentDate}
-            </p>
-            <div className="grid grid-cols-2 gap-8 text-center">
-              {/* Pegawai Yang Dinilai */}
+          <div className="pt-6 border-t-2 border-black space-y-1">
+            <div className="text-right pr-12 pb-2">
+              <p className="font-medium text-xs">
+                Semarang, 01 Januari {periodeTahun}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-8 text-center text-xs">
               <div className="space-y-16">
+                <p className="font-bold">Pegawai yang Dinilai</p>
                 <div>
-                  <p className="font-semibold text-on-surface-variant print:text-black">Pegawai yang Dinilai,</p>
-                  <p className="text-[10px] text-success font-bold flex items-center justify-center gap-1 mt-1">
-                    <span className="material-symbols-outlined text-xs">verified</span>
-                    Telah Disetujui secara Digital
-                  </p>
-                </div>
-                <div>
-                  <p className="font-bold underline text-on-surface">{pegawaiUser?.pegawai?.nama_lengkap || pegawaiUser?.email}</p>
-                  <p className="text-[11px] text-on-surface-variant print:text-black">NIP. {pegawaiUser?.pegawai?.nip || '-'}</p>
+                  <p className="font-bold underline text-sm">{namaPegawai}</p>
+                  <p className="font-mono text-xs">NPPU {nipPegawai}</p>
                 </div>
               </div>
 
-              {/* Pejabat Penilai Kinerja */}
               <div className="space-y-16">
+                <p className="font-bold">Pejabat Penilai Kinerja</p>
                 <div>
-                  <p className="font-semibold text-on-surface-variant print:text-black">Pejabat Penilai Kinerja,</p>
-                  <p className="text-[10px] text-success font-bold flex items-center justify-center gap-1 mt-1">
-                    <span className="material-symbols-outlined text-xs">verified</span>
-                    Telah Diverifikasi secara Digital
-                  </p>
-                </div>
-                <div>
-                  <p className="font-bold underline text-on-surface">{atasanUser?.pegawai?.nama_lengkap || atasanUser?.email || 'Atasan Langsung'}</p>
-                  <p className="text-[11px] text-on-surface-variant print:text-black">NIP. {atasanUser?.pegawai?.nip || '-'}</p>
+                  <p className="font-bold underline text-sm">{namaPenilai}</p>
+                  <p className="font-mono text-xs">NPPU {nipPenilai}</p>
                 </div>
               </div>
             </div>
           </div>
+
         </div>
       </div>
     </div>

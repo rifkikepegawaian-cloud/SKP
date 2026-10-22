@@ -1,10 +1,19 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
+import Link from 'next/link'
 import { useCascading } from '@/context/CascadingContext'
-import { ROLE_LABELS, NilaiPerilakuItem } from '@/lib/types'
+import { ROLE_LABELS, NilaiPerilakuItem, UserRole } from '@/lib/types'
 import { ASPEK_BERAKHLAK } from '@/lib/constants/perilakuKerja'
 import { createClient } from '@/lib/supabase/client'
+import {
+  ProfileSKP,
+  DEFAULT_PEGAWAI_RIFKI,
+  DEFAULT_PENILAI_MONA,
+  SAMPLE_HASIL_KERJA_UTAMA,
+  SAMPLE_HASIL_KERJA_TAMBAHAN,
+} from '@/lib/constants/skpTemplateRifki'
+import Swal from 'sweetalert2'
 
 export default function CetakDokumenSKPPage() {
   const {
@@ -15,6 +24,124 @@ export default function CetakDokumenSKPPage() {
     agreedTasksForSKP,
   } = useCascading()
 
+  // Toggle between real database cascading tasks vs authentic UNDIP template (Rencana SKP Rifki)
+  const hasAgreedTasks = agreedTasksForSKP.length > 0
+  const [useSampleData, setUseSampleData] = useState<boolean>(!hasAgreedTasks)
+
+  // Update toggle if agreed tasks become available
+  useEffect(() => {
+    if (agreedTasksForSKP.length > 0) {
+      setUseSampleData(false)
+    }
+  }, [agreedTasksForSKP.length])
+
+  // Identitas Pegawai Yang Dinilai
+  const [pegawaiProfile, setPegawaiProfile] = useState<ProfileSKP>(() => ({
+    nama: user?.pegawai?.nama_lengkap || user?.email || DEFAULT_PEGAWAI_RIFKI.nama,
+    nip: user?.pegawai?.nip || DEFAULT_PEGAWAI_RIFKI.nip,
+    pangkatGol: 'Setara Penata Muda/ Set. III/a',
+    jabatan: user?.pegawai?.jabatan || ROLE_LABELS[role] || DEFAULT_PEGAWAI_RIFKI.jabatan,
+    unitKerja: user?.pegawai?.unit_es2 || DEFAULT_PEGAWAI_RIFKI.unitKerja,
+  }))
+
+  // Identitas Pejabat Penilai Kinerja (Atasan Langsung)
+  const [penilaiProfile, setPenilaiProfile] = useState<ProfileSKP>(() => ({
+    nama: DEFAULT_PENILAI_MONA.nama,
+    nip: DEFAULT_PENILAI_MONA.nip,
+    pangkatGol: DEFAULT_PENILAI_MONA.pangkatGol,
+    jabatan: DEFAULT_PENILAI_MONA.jabatan,
+    unitKerja: DEFAULT_PENILAI_MONA.unitKerja,
+  }))
+
+  // Modal dialog for editing employee / superior data
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+
+  // Auto-detect superior from assigned_by_user in agreedTasks or find in same unit
+  useEffect(() => {
+    if (!user) return
+
+    // 1. Update Pegawai profile from user
+    setPegawaiProfile(prev => ({
+      ...prev,
+      nama: user.pegawai?.nama_lengkap || user.email || prev.nama,
+      nip: user.pegawai?.nip || prev.nip,
+      jabatan: user.pegawai?.jabatan || ROLE_LABELS[role] || prev.jabatan,
+      unitKerja: user.pegawai?.unit_es2 || prev.unitKerja,
+    }))
+
+    // 2. Check if any agreed task has an assigned_by_user (direct supervisor)
+    const firstAssignedByUser = agreedTasksForSKP.find(t => t.assignedByUser)?.assignedByUser
+    if (firstAssignedByUser?.pegawai) {
+      setPenilaiProfile({
+        nama: firstAssignedByUser.pegawai.nama_lengkap || DEFAULT_PENILAI_MONA.nama,
+        nip: firstAssignedByUser.pegawai.nip || DEFAULT_PENILAI_MONA.nip,
+        pangkatGol: 'Setara Penata Muda/ Set. III/a',
+        jabatan: firstAssignedByUser.pegawai.jabatan || ROLE_LABELS[firstAssignedByUser.role as UserRole] || DEFAULT_PENILAI_MONA.jabatan,
+        unitKerja: firstAssignedByUser.pegawai.unit_es2 || user.pegawai?.unit_es2 || DEFAULT_PENILAI_MONA.unitKerja,
+      })
+      return
+    }
+
+    // 3. Check localStorage for previously saved custom profiles
+    const savedProfiles = localStorage.getItem(`skp_profiles_${user.id}`)
+    if (savedProfiles) {
+      try {
+        const parsed = JSON.parse(savedProfiles)
+        if (parsed.pegawai) setPegawaiProfile(parsed.pegawai)
+        if (parsed.penilai) setPenilaiProfile(parsed.penilai)
+      } catch (e) {
+        console.error(e)
+      }
+    } else {
+      // Set role-based superior defaults
+      if (role === 'rektor') {
+        setPenilaiProfile({
+          nama: 'Menteri Pendidikan Tinggi, Sains, dan Teknologi',
+          nip: '196109241988031001',
+          pangkatGol: 'Pejabat Negara',
+          jabatan: 'Menteri Pendidikan Tinggi, Sains, dan Teknologi RI',
+          unitKerja: 'Kementerian Pendidikan Tinggi, Sains, dan Teknologi',
+        })
+      } else if (role === 'pimpinan_sukpa') {
+        setPenilaiProfile({
+          nama: 'Prof. Dr. Suharnomo, S.E., M.Si.',
+          nip: '197007221998021001',
+          pangkatGol: 'Pembina Utama / IV/e',
+          jabatan: 'Rektor Universitas Diponegoro',
+          unitKerja: 'Universitas Diponegoro',
+        })
+      } else if (role === 'pimpinan_unit') {
+        setPenilaiProfile({
+          nama: 'Prof. Dr. Ir. Muhammad Zainuri, DEA',
+          nip: '196207131987031003',
+          pangkatGol: 'Pembina Utama Madya / IV/d',
+          jabatan: 'Pimpinan SUKPA / Wakil Rektor',
+          unitKerja: 'Universitas Diponegoro',
+        })
+      }
+    }
+  }, [user, role, agreedTasksForSKP])
+
+  // Save customized profiles
+  const handleSaveProfiles = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (user) {
+      localStorage.setItem(`skp_profiles_${user.id}`, JSON.stringify({
+        pegawai: pegawaiProfile,
+        penilai: penilaiProfile,
+      }))
+    }
+    setIsEditModalOpen(false)
+    Swal.fire({
+      icon: 'success',
+      title: 'Data Profil Tersimpan',
+      text: 'Identitas pegawai dan pejabat penilai kinerja berhasil diperbarui pada dokumen SKP.',
+      timer: 1500,
+      showConfirmButton: false,
+    })
+  }
+
+  // Load Perilaku Kerja data
   const [perilakuMap, setPerilakuMap] = useState<Record<number, NilaiPerilakuItem>>(() => {
     const defaults: Record<number, NilaiPerilakuItem> = {}
     ASPEK_BERAKHLAK.forEach(a => {
@@ -39,7 +166,6 @@ export default function CetakDokumenSKPPage() {
         console.error(e)
       }
     } else {
-      // Try from supabase
       const loadSupabase = async () => {
         try {
           const supabase = createClient()
@@ -69,6 +195,34 @@ export default function CetakDokumenSKPPage() {
     }
   }, [user, periode?.id])
 
+  // Computed Tasks to display in HASIL KERJA
+  const { tasksUtama, tasksTambahan } = useMemo(() => {
+    if (useSampleData) {
+      return {
+        tasksUtama: SAMPLE_HASIL_KERJA_UTAMA,
+        tasksTambahan: SAMPLE_HASIL_KERJA_TAMBAHAN,
+      }
+    }
+
+    const utama = agreedTasksForSKP.filter(t => (t.jenisKinerja || 'utama') === 'utama')
+    const tambahan = agreedTasksForSKP.filter(t => t.jenisKinerja === 'tambahan')
+
+    return {
+      tasksUtama: utama.length > 0 ? utama : SAMPLE_HASIL_KERJA_UTAMA,
+      tasksTambahan: tambahan,
+    }
+  }, [useSampleData, agreedTasksForSKP])
+
+  const periodeTahun = periode?.tahun || '2025'
+  const periodeMulai = periode?.tgl_mulai_cascading || `03 Januari ${periodeTahun}`
+  const periodeAkhir = periode?.tgl_akhir_cascading || `31 Desember ${periodeTahun}`
+
+  // Approach label based on role
+  const isPimpinanTinggi = role === 'rektor' || role === 'pimpinan_sukpa'
+  const subTitlePendekatan = isPimpinanTinggi
+    ? 'PENDEKATAN HASIL KERJA KUANTITATIF\nBAGI PEJABAT PIMPINAN TINGGI'
+    : 'PENDEKATAN HASIL KERJA KUALITATIF\nBAGI PEJABAT ADMINISTRASI/ FUNGSIONAL'
+
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[50vh] gap-3">
@@ -80,38 +234,61 @@ export default function CetakDokumenSKPPage() {
     )
   }
 
-  const handlePrint = () => {
-    window.print()
-  }
-
-  const currentDate = new Date().toLocaleDateString('id-ID', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  })
-
   return (
     <div className="space-y-6">
-      {/* Page Header (Hidden in Print) */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-outline-variant/30 shadow-xs print:hidden">
+      {/* ──────────────────────────────────────────────────────────── */}
+      {/* 1. TOP CONTROL BAR (HIDDEN IN PRINT)                         */}
+      {/* ──────────────────────────────────────────────────────────── */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-outline-variant/30 shadow-xs print:hidden">
         <div>
           <div className="flex items-center gap-2 text-xs text-on-surface-variant mb-1">
-            <span className="font-semibold text-primary">Cascading & Rencana SKP</span>
+            <Link href="/cascading" className="font-semibold text-primary hover:underline">
+              Cascading & Rencana SKP
+            </Link>
             <span className="material-symbols-outlined text-xs">chevron_right</span>
-            <span>Cetak Dokumen Rencana SKP</span>
+            <span className="text-on-surface font-medium">Cetak Dokumen Rencana SKP</span>
           </div>
-          <h2 className="text-xl font-extrabold text-on-surface tracking-tight" style={{ fontFamily: 'Manrope' }}>
-            Cetak Dokumen Rencana SKP
+          <h2 className="text-xl md:text-2xl font-extrabold text-on-surface tracking-tight" style={{ fontFamily: 'Manrope' }}>
+            Dokumen Resmi Rencana Sasaran Kinerja Pegawai (SKP)
           </h2>
           <p className="text-xs text-on-surface-variant mt-0.5">
-            Pratinjau template dokumen kesepakatan SKP resmi berdasarkan target yang telah Anda sepakati dalam alur cascading.
+            Format resmi Lampiran PermenPAN-RB No. 6 Tahun 2022 (Sesuai Rencana SKP UNDIP).
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Data Source Toggle */}
           <button
-            onClick={handlePrint}
-            className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary/90 flex items-center gap-2 shadow-md shadow-primary/20 transition-all cursor-pointer"
+            type="button"
+            onClick={() => setUseSampleData(!useSampleData)}
+            className={`px-3.5 py-2 rounded-2xl text-xs font-bold border transition-colors flex items-center gap-1.5 cursor-pointer ${
+              useSampleData
+                ? 'bg-amber-100 text-amber-900 border-amber-300'
+                : 'bg-surface-container-low text-primary border-outline-variant/30 hover:bg-surface-container'
+            }`}
+            title="Beralih antara template contoh UNDIP (Rencana SKP Rifki) dan tugas cascading riil Anda"
+          >
+            <span className="material-symbols-outlined text-sm">
+              {useSampleData ? 'description' : 'sync_alt'}
+            </span>
+            {useSampleData ? 'Mode: Contoh Dokumen SKP' : 'Mode: Tugas Cascading Riil'}
+          </button>
+
+          {/* Edit Profile Button */}
+          <button
+            type="button"
+            onClick={() => setIsEditModalOpen(true)}
+            className="px-3.5 py-2 rounded-2xl bg-surface-container-low hover:bg-surface-container border border-outline-variant/30 text-xs font-bold text-on-surface flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-sm text-primary">edit</span>
+            Ubah Data Pegawai & Penilai
+          </button>
+
+          {/* Print Button */}
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="px-4 py-2 rounded-2xl bg-primary text-white text-xs font-bold hover:bg-primary/90 flex items-center gap-1.5 shadow-md shadow-primary/20 transition-all cursor-pointer"
           >
             <span className="material-symbols-outlined text-sm">print</span>
             Cetak Dokumen (Print / PDF)
@@ -119,237 +296,501 @@ export default function CetakDokumenSKPPage() {
         </div>
       </div>
 
-      {/* Info Notice for Future Discussion (Hidden in Print) */}
-      <div className="p-4 rounded-2xl bg-sky-50 border border-sky-200/80 flex items-start gap-3.5 print:hidden">
-        <div className="w-8 h-8 rounded-xl bg-sky-500/10 text-sky-600 flex items-center justify-center shrink-0 mt-0.5">
-          <span className="material-symbols-outlined text-lg">info</span>
+      {/* Info Notice when in sample/cascading mode */}
+      <div className="p-4 rounded-2xl bg-sky-50 border border-sky-200/80 flex items-center justify-between gap-3 print:hidden text-xs">
+        <div className="flex items-center gap-2.5 text-sky-950">
+          <span className="material-symbols-outlined text-sky-600 text-lg">info</span>
+          <div>
+            <p className="font-bold">
+              {useSampleData
+                ? 'Menampilkan Format Template Resmi UNDIP (Rencana SKP Rifki Rokhanudin, S.Si.)'
+                : `Menampilkan ${tasksUtama.length} Butir Kinerja dari Penugasan Cascading Aktif Anda`}
+            </p>
+            <p className="text-[11px] text-sky-800">
+              Hasil kerja memuat IKU untuk Rektor/SUKPA/Unit, Output untuk Manajer, Uraian untuk Supervisor, dan Sub-Uraian untuk Staf dengan ukuran keberhasilan terintegrasi.
+            </p>
+          </div>
         </div>
-        <div className="space-y-1 text-xs text-sky-950">
-          <p className="font-bold">Pratinjau Template Rencana Sasaran Kinerja Pegawai (SKP)</p>
-          <p className="text-sky-800 leading-relaxed text-[11px]">
-            Halaman ini menampilkan draf format resmi SKP PermenPANRB No. 6 Tahun 2022. Komponen, lampiran, dan format cetak dokumen ini siap disesuaikan lebih lanjut pada diskusi berikutnya.
-          </p>
-        </div>
+
+        {hasAgreedTasks && useSampleData && (
+          <button
+            type="button"
+            onClick={() => setUseSampleData(false)}
+            className="px-3 py-1.5 rounded-xl bg-sky-600 text-white font-bold text-[11px] shrink-0 hover:bg-sky-700 transition-colors cursor-pointer"
+          >
+            Gunakan Tugas Cascading Saya
+          </button>
+        )}
       </div>
 
-      {/* Document Sheet (Printable A4 Preview) */}
-      <div className="bg-white rounded-3xl border border-outline-variant/30 shadow-md p-8 md:p-14 max-w-5xl mx-auto space-y-6 text-on-surface font-sans print:border-none print:shadow-none print:p-0 print:m-0 print:rounded-none">
+      {/* ──────────────────────────────────────────────────────────── */}
+      {/* 2. OFFICIAL SKP DOCUMENT (MATCHING Rencana SKP Rifki.pdf)    */}
+      {/* ──────────────────────────────────────────────────────────── */}
+      <div className="bg-white rounded-3xl border border-black/30 shadow-lg p-6 md:p-12 max-w-5xl mx-auto space-y-4 text-black font-sans print:border-none print:shadow-none print:p-0 print:m-0 print:rounded-none print:max-w-none text-xs">
         
-        {/* Header Lembaga */}
-        <div className="border-b-2 border-on-surface pb-4 text-center space-y-1">
-          <h3 className="text-xs font-extrabold uppercase tracking-wide text-on-surface-variant">
-            KEMENTERIAN PENDIDIKAN TINGGI, SAINS, DAN TEKNOLOGI
-          </h3>
-          <h1 className="text-lg font-black uppercase tracking-wider text-primary print:text-black" style={{ fontFamily: 'Manrope' }}>
-            UNIVERSITAS DIPONEGORO
+        {/* Title Header */}
+        <div className="text-center space-y-1 pb-1">
+          <h1 className="text-sm md:text-base font-black tracking-wide uppercase">
+            SASARAN KINERJA PEGAWAI
           </h1>
-          <h2 className="text-sm font-extrabold uppercase tracking-widest text-on-surface">
-            RENCANA SASARAN KINERJA PEGAWAI (SKP)
+          <h2 className="text-xs md:text-sm font-bold tracking-wide uppercase whitespace-pre-line leading-snug">
+            {subTitlePendekatan}
           </h2>
-          <p className="text-[11px] text-on-surface-variant">
-            Periode Penilaian: <b>{periode?.tgl_mulai_cascading || '1 Januari 2026'}</b> s.d. <b>{periode?.tgl_akhir_cascading || '31 Desember 2026'}</b> (Tahun {periode?.tahun || '2026'})
-          </p>
         </div>
 
-        {/* Pegawai Yang Dinilai & Pejabat Penilai Kinerja */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs border border-on-surface/30 rounded-2xl p-4 bg-surface-container-lowest">
-          {/* Pegawai Yang Dinilai */}
-          <div className="space-y-2">
-            <h4 className="font-bold uppercase text-[11px] pb-1 border-b border-outline-variant/40 text-primary print:text-black">
-              I. Pegawai yang Dinilai
-            </h4>
-            <table className="w-full text-left space-y-1">
-              <tbody>
-                <tr>
-                  <td className="w-24 text-on-surface-variant font-medium py-0.5">Nama</td>
-                  <td className="w-3">:</td>
-                  <td className="font-bold">{user?.pegawai?.nama_lengkap || user?.email || '-'}</td>
-                </tr>
-                <tr>
-                  <td className="text-on-surface-variant font-medium py-0.5">NIP</td>
-                  <td>:</td>
-                  <td>{user?.pegawai?.nip || '-'}</td>
-                </tr>
-                <tr>
-                  <td className="text-on-surface-variant font-medium py-0.5">Jabatan</td>
-                  <td>:</td>
-                  <td>{user?.pegawai?.jabatan || ROLE_LABELS[role] || '-'}</td>
-                </tr>
-                <tr>
-                  <td className="text-on-surface-variant font-medium py-0.5">Unit Kerja</td>
-                  <td>:</td>
-                  <td>{user?.pegawai?.unit_es2 || 'Universitas Diponegoro'}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          {/* Pejabat Penilai Kinerja */}
-          <div className="space-y-2">
-            <h4 className="font-bold uppercase text-[11px] pb-1 border-b border-outline-variant/40 text-primary print:text-black">
-              II. Pejabat Penilai Kinerja
-            </h4>
-            <table className="w-full text-left space-y-1">
-              <tbody>
-                <tr>
-                  <td className="w-24 text-on-surface-variant font-medium py-0.5">Nama</td>
-                  <td className="w-3">:</td>
-                  <td className="font-bold">Pejabat Atasan Langsung</td>
-                </tr>
-                <tr>
-                  <td className="text-on-surface-variant font-medium py-0.5">NIP</td>
-                  <td>:</td>
-                  <td>-</td>
-                </tr>
-                <tr>
-                  <td className="text-on-surface-variant font-medium py-0.5">Jabatan</td>
-                  <td>:</td>
-                  <td>Atasan Penilai Kinerja</td>
-                </tr>
-                <tr>
-                  <td className="text-on-surface-variant font-medium py-0.5">Unit Kerja</td>
-                  <td>:</td>
-                  <td>Universitas Diponegoro</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+        {/* Institution & Period Header */}
+        <div className="flex justify-between items-center font-bold text-xs pt-2 pb-1 border-t-2 border-black">
+          <span>UNIVERSITAS DIPONEGORO</span>
+          <span className="uppercase">
+            PERIODE PENILAIAN: {periodeMulai} S.D. {periodeAkhir}
+          </span>
         </div>
 
-        {/* Tabel Hasil Kerja SKP */}
-        <div className="space-y-2">
-          <h4 className="font-bold uppercase text-xs text-on-surface">
-            III. Rencana Kinerja (Sasaran Kerja Pegawai)
-          </h4>
+        {/* ────────────────────────────────────────────────────────── */}
+        {/* TABEL IDENTITAS PEGAWAI & PEJABAT PENILAI (2 KOLOM)       */}
+        {/* ────────────────────────────────────────────────────────── */}
+        <div className="border border-black overflow-hidden">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-[#c2d7f2] border-b border-black font-bold text-center">
+                <th className="p-1.5 w-8 border-r border-black text-center">NO</th>
+                <th className="p-1.5 border-r border-black w-[45%] text-left uppercase">
+                  PEGAWAI YANG DINILAI
+                </th>
+                <th className="p-1.5 w-8 border-r border-black text-center">NO</th>
+                <th className="p-1.5 w-[45%] text-left uppercase">
+                  PEJABAT PENILAI KINERJA
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {/* Row 1: Nama */}
+              <tr className="border-b border-black">
+                <td className="p-1.5 text-center border-r border-black font-bold">1</td>
+                <td className="p-1.5 border-r border-black">
+                  <div className="flex">
+                    <span className="w-40 font-bold">NAMA</span>
+                    <span className="w-3">:</span>
+                    <span className="flex-1 font-bold">{pegawaiProfile.nama}</span>
+                  </div>
+                </td>
+                <td className="p-1.5 text-center border-r border-black font-bold">1</td>
+                <td className="p-1.5">
+                  <div className="flex">
+                    <span className="w-40 font-bold">NAMA</span>
+                    <span className="w-3">:</span>
+                    <span className="flex-1 font-bold">{penilaiProfile.nama}</span>
+                  </div>
+                </td>
+              </tr>
 
-          {agreedTasksForSKP.length === 0 ? (
-            <div className="p-8 text-center text-xs text-on-surface-variant/70 italic border border-dashed border-outline-variant rounded-2xl">
-              Belum ada tugas yang berstatus <b>Disepakati</b>. Rencana kinerja akan otomatis terisi saat tugas disetujui pada menu <b>Tugas Masuk & Dialog Kinerja</b>.
-            </div>
-          ) : (
-            <div className="overflow-x-auto border border-on-surface/30 rounded-xl">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-surface-container text-on-surface border-b border-on-surface/30 font-bold uppercase text-[10px]">
-                  <tr>
-                    <th className="p-3 w-8 text-center border-r border-outline-variant/30">No</th>
-                    <th className="p-3 border-r border-outline-variant/30">Rencana Kinerja Pimpinan yang Diintervensi</th>
-                    <th className="p-3 border-r border-outline-variant/30">Rencana Kinerja Pegawai</th>
-                    <th className="p-3 border-r border-outline-variant/30 text-center w-24">Target</th>
-                    <th className="p-3 w-28 text-center">Satuan</th>
+              {/* Row 2: NPPU / NIP */}
+              <tr className="border-b border-black">
+                <td className="p-1.5 text-center border-r border-black font-bold">2</td>
+                <td className="p-1.5 border-r border-black">
+                  <div className="flex">
+                    <span className="w-40 font-bold">NPPU</span>
+                    <span className="w-3">:</span>
+                    <span className="flex-1 font-mono">{pegawaiProfile.nip}</span>
+                  </div>
+                </td>
+                <td className="p-1.5 text-center border-r border-black font-bold">2</td>
+                <td className="p-1.5">
+                  <div className="flex">
+                    <span className="w-40 font-bold">NPPU</span>
+                    <span className="w-3">:</span>
+                    <span className="flex-1 font-mono">{penilaiProfile.nip}</span>
+                  </div>
+                </td>
+              </tr>
+
+              {/* Row 3: Pangkat / Gol. Ruang */}
+              <tr className="border-b border-black">
+                <td className="p-1.5 text-center border-r border-black font-bold">3</td>
+                <td className="p-1.5 border-r border-black">
+                  <div className="flex">
+                    <span className="w-40 font-bold">PANGKAT/ GOL. RUANG</span>
+                    <span className="w-3">:</span>
+                    <span className="flex-1">{pegawaiProfile.pangkatGol}</span>
+                  </div>
+                </td>
+                <td className="p-1.5 text-center border-r border-black font-bold">3</td>
+                <td className="p-1.5">
+                  <div className="flex">
+                    <span className="w-40 font-bold">PANGKAT/ GOL. RUANG</span>
+                    <span className="w-3">:</span>
+                    <span className="flex-1">{penilaiProfile.pangkatGol}</span>
+                  </div>
+                </td>
+              </tr>
+
+              {/* Row 4: Jabatan */}
+              <tr className="border-b border-black">
+                <td className="p-1.5 text-center border-r border-black font-bold">4</td>
+                <td className="p-1.5 border-r border-black">
+                  <div className="flex">
+                    <span className="w-40 font-bold">JABATAN</span>
+                    <span className="w-3">:</span>
+                    <span className="flex-1">{pegawaiProfile.jabatan}</span>
+                  </div>
+                </td>
+                <td className="p-1.5 text-center border-r border-black font-bold">4</td>
+                <td className="p-1.5">
+                  <div className="flex">
+                    <span className="w-40 font-bold">JABATAN</span>
+                    <span className="w-3">:</span>
+                    <span className="flex-1">{penilaiProfile.jabatan}</span>
+                  </div>
+                </td>
+              </tr>
+
+              {/* Row 5: Unit Kerja */}
+              <tr>
+                <td className="p-1.5 text-center border-r border-black font-bold">5</td>
+                <td className="p-1.5 border-r border-black">
+                  <div className="flex">
+                    <span className="w-40 font-bold">UNIT KERJA</span>
+                    <span className="w-3">:</span>
+                    <span className="flex-1">{pegawaiProfile.unitKerja}</span>
+                  </div>
+                </td>
+                <td className="p-1.5 text-center border-r border-black font-bold">5</td>
+                <td className="p-1.5">
+                  <div className="flex">
+                    <span className="w-40 font-bold">UNIT KERJA</span>
+                    <span className="w-3">:</span>
+                    <span className="flex-1">{penilaiProfile.unitKerja}</span>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {/* ────────────────────────────────────────────────────────── */}
+        {/* TABEL HASIL KERJA (A. UTAMA & B. TAMBAHAN)                 */}
+        {/* ────────────────────────────────────────────────────────── */}
+        <div className="border border-black overflow-hidden">
+          {/* Header Section: HASIL KERJA */}
+          <div className="bg-[#c2d7f2] font-black p-1.5 border-b border-black text-black tracking-wide uppercase">
+            HASIL KERJA
+          </div>
+
+          {/* Subheader: A. UTAMA */}
+          <div className="font-bold p-1.5 border-b border-black bg-white uppercase">
+            A. UTAMA
+          </div>
+
+          {/* List of Tasks Utama */}
+          <table className="w-full text-left border-collapse">
+            <tbody>
+              {tasksUtama.map((task, idx) => (
+                <React.Fragment key={task.id || idx}>
+                  {/* Baris 1: Nomor dan Nama Tugas */}
+                  <tr className="border-b border-black">
+                    <td className="w-8 p-1.5 text-center align-top border-r border-black font-bold">
+                      {idx + 1}
+                    </td>
+                    <td className="p-1.5 align-top font-semibold leading-relaxed">
+                      {task.title}
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-outline-variant/20">
-                  <tr className="bg-surface-container-low font-bold text-[11px]">
-                    <td colSpan={5} className="p-2.5 text-primary">A. KINERJA UTAMA</td>
+
+                  {/* Baris 2: Indikator Keberhasilan dan Target */}
+                  <tr className="border-b border-black">
+                    <td className="p-1.5 border-r border-black bg-neutral-50/50"></td>
+                    <td className="p-1.5 pl-4 align-top space-y-0.5 leading-relaxed bg-neutral-50/30">
+                      <p className="font-bold italic text-[11px]">
+                        Ukuran keberhasilan/ Indikator Kinerja Individu, Target, dan Perspektif :
+                      </p>
+                      <p className="text-[11px] leading-relaxed">
+                        {task.indikatorKinerja ||
+                          `Terprosesnya ${task.title} sebanyak ${task.target || 100} ${task.satuan || '%'} diproses 100%`}
+                      </p>
+                    </td>
                   </tr>
-                  {agreedTasksForSKP.map((task, idx) => (
-                    <tr key={task.id} className="hover:bg-surface-container-lowest">
-                      <td className="p-3 text-center border-r border-outline-variant/20 font-medium">
-                        {idx + 1}
-                      </td>
-                      <td className="p-3 border-r border-outline-variant/20 text-on-surface-variant">
-                        {task.parentTitle || 'Pencapaian IKU dan Sasaran Strategis Universitas Diponegoro'}
-                      </td>
-                      <td className="p-3 border-r border-outline-variant/20 font-semibold text-on-surface">
-                        {task.title}
-                        {task.isDirectSync && (
-                          <span className="ml-2 px-1.5 py-0.5 rounded text-[9px] bg-blue-100 text-blue-800 font-bold print:hidden">
-                            Direct Sync
-                          </span>
-                        )}
-                      </td>
-                      <td className="p-3 text-center border-r border-outline-variant/20 font-bold text-on-surface">
-                        {task.target}
-                      </td>
-                      <td className="p-3 text-center font-medium text-on-surface-variant">
-                        {task.satuan}
-                      </td>
-                    </tr>
+                </React.Fragment>
+              ))}
+            </tbody>
+          </table>
+
+          {/* Subheader & List: B. TAMBAHAN */}
+          {tasksTambahan.length > 0 && (
+            <>
+              <div className="font-bold p-1.5 border-t border-b border-black bg-[#c2d7f2] uppercase">
+                B. TAMBAHAN
+              </div>
+              <table className="w-full text-left border-collapse">
+                <tbody>
+                  {tasksTambahan.map((task, idx) => (
+                    <React.Fragment key={task.id || idx}>
+                      <tr className="border-b border-black">
+                        <td className="w-8 p-1.5 text-center align-top border-r border-black font-bold">
+                          {idx + 1}
+                        </td>
+                        <td className="p-1.5 align-top font-semibold leading-relaxed">
+                          {task.title}
+                        </td>
+                      </tr>
+                      <tr className="border-b border-black">
+                        <td className="p-1.5 border-r border-black bg-neutral-50/50"></td>
+                        <td className="p-1.5 pl-4 align-top space-y-0.5 leading-relaxed bg-neutral-50/30">
+                          <p className="font-bold italic text-[11px]">
+                            Ukuran keberhasilan/ Indikator Kinerja Individu, Target, dan Perspektif :
+                          </p>
+                          <p className="text-[11px] leading-relaxed">
+                            {task.indikatorKinerja ||
+                              `Terprosesnya ${task.title} sebanyak ${task.target || 100} ${task.satuan || '%'} diproses 100%`}
+                          </p>
+                        </td>
+                      </tr>
+                    </React.Fragment>
                   ))}
                 </tbody>
               </table>
-            </div>
+            </>
           )}
         </div>
 
-        {/* IV. PERILAKU KERJA (Format Resmi Lampiran PermenPAN-RB No. 6/2022) */}
-        <div className="space-y-2">
-          <div className="overflow-x-auto border border-on-surface text-xs">
-            {/* Table Header exactly matching user's scan */}
-            <div className="bg-[#c2d7f2] font-black p-2 border-b border-on-surface text-black tracking-wide">
-              PERILAKU KERJA*
-            </div>
-            <table className="w-full text-left border-collapse">
-              <tbody>
-                {ASPEK_BERAKHLAK.map((aspek, idx) => (
-                  <tr key={aspek.id} className="border-b border-on-surface last:border-b-0">
-                    <td className="w-8 p-2.5 text-center align-top border-r border-on-surface font-bold">
+        {/* ────────────────────────────────────────────────────────── */}
+        {/* TABEL PERILAKU KERJA (7 CORE VALUES BerAKHLAK)             */}
+        {/* ────────────────────────────────────────────────────────── */}
+        <div className="border border-black overflow-hidden break-before-page">
+          <div className="bg-[#c2d7f2] font-black p-1.5 border-b border-black text-black tracking-wide">
+            PERILAKU KERJA*
+          </div>
+
+          <table className="w-full text-left border-collapse">
+            <tbody>
+              {ASPEK_BERAKHLAK.map((aspek, idx) => {
+                const itemData = perilakuMap[aspek.id]
+                const ekspektasi = itemData?.ekspektasi_khusus || aspek.defaultEkspektasi
+
+                return (
+                  <tr key={aspek.id} className="border-b border-black last:border-b-0">
+                    {/* No */}
+                    <td className="w-8 p-1.5 text-center align-top border-r border-black font-bold">
                       {idx + 1}
                     </td>
-                    <td className="p-2.5 align-top border-r border-on-surface w-1/2">
-                      <p className="font-bold text-on-surface capitalize mb-1">
+
+                    {/* Aspek & Panduan Perilaku */}
+                    <td className="p-1.5 align-top border-r border-black w-1/2">
+                      <p className="font-bold text-black capitalize mb-0.5">
                         {aspek.nama}
                       </p>
-                      <ul className="space-y-0.5 text-on-surface text-[11px]">
+                      <ul className="space-y-0.5 text-black text-[11px]">
                         {aspek.panduan.map((pd, pIndex) => (
                           <li key={pIndex} className="flex items-start">
                             <span className="mr-1.5">-</span>
-                            <span>{pd}</span>
+                            <span className="leading-tight">{pd}</span>
                           </li>
                         ))}
                       </ul>
                     </td>
-                    <td className="p-2.5 align-top w-1/2 space-y-1">
-                      <p className="font-bold text-on-surface text-[11px]">
+
+                    {/* Ekspektasi Khusus Pimpinan */}
+                    <td className="p-1.5 align-top w-1/2 space-y-0.5">
+                      <p className="font-bold text-black text-[11px]">
                         Ekspektasi Khusus Pimpinan:
                       </p>
-                      <p className="text-on-surface font-medium text-[11px] leading-relaxed">
-                        {perilakuMap[aspek.id]?.ekspektasi_khusus || aspek.defaultEkspektasi}
+                      <p className="text-black font-medium text-[11px] leading-relaxed">
+                        {ekspektasi}
                       </p>
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <p className="text-[10px] text-on-surface-variant italic">
-            * Sesuai Format Lampiran PermenPAN-RB No. 6 Tahun 2022 tentang Pengelolaan Kinerja Pegawai Aparatur Sipil Negara.
-          </p>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
 
-        {/* Tanda Tangan */}
-        <div className="pt-8 grid grid-cols-2 gap-8 text-xs text-center border-t border-outline-variant/30">
-          <div className="space-y-16">
-            <div>
-              <p className="text-on-surface-variant">Pegawai yang Dinilai,</p>
-            </div>
-            <div>
-              <p className="font-bold underline text-on-surface">
-                {user?.pegawai?.nama_lengkap || user?.email || '(Nama Pegawai)'}
-              </p>
-              <p className="text-[11px] text-on-surface-variant font-mono">
-                NIP. {user?.pegawai?.nip || '..............................'}
-              </p>
-            </div>
+        {/* ────────────────────────────────────────────────────────── */}
+        {/* LEMBAR PENGESAHAN & TANDA TANGAN (SEMARANG, 01 JANUARI)    */}
+        {/* ────────────────────────────────────────────────────────── */}
+        <div className="pt-6 border-t-2 border-black space-y-1">
+          <div className="text-right pr-12 pb-2">
+            <p className="font-medium text-xs">
+              Semarang, 01 Januari {periodeTahun}
+            </p>
           </div>
 
-          <div className="space-y-16">
-            <div>
-              <p className="text-on-surface-variant">Semarang, {currentDate}</p>
-              <p className="text-on-surface-variant">Pejabat Penilai Kinerja,</p>
+          <div className="grid grid-cols-2 gap-8 text-center text-xs">
+            {/* Pegawai Yang Dinilai */}
+            <div className="space-y-16">
+              <p className="font-bold">Pegawai yang Dinilai</p>
+              <div>
+                <p className="font-bold underline text-sm">{pegawaiProfile.nama}</p>
+                <p className="font-mono text-xs">NPPU {pegawaiProfile.nip}</p>
+              </div>
             </div>
-            <div>
-              <p className="font-bold underline text-on-surface">
-                (Nama Pejabat Penilai)
-              </p>
-              <p className="text-[11px] text-on-surface-variant font-mono">
-                NIP. ..............................
-              </p>
+
+            {/* Pejabat Penilai Kinerja */}
+            <div className="space-y-16">
+              <p className="font-bold">Pejabat Penilai Kinerja</p>
+              <div>
+                <p className="font-bold underline text-sm">{penilaiProfile.nama}</p>
+                <p className="font-mono text-xs">NPPU {penilaiProfile.nip}</p>
+              </div>
             </div>
           </div>
         </div>
 
       </div>
+
+      {/* ──────────────────────────────────────────────────────────── */}
+      {/* 3. MODAL EDIT IDENTITAS PEGAWAI & PEJABAT PENILAI           */}
+      {/* ──────────────────────────────────────────────────────────── */}
+      {isEditModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in print:hidden">
+          <div className="w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-outline-variant/30 overflow-hidden">
+            <div className="px-6 py-4 border-b border-outline-variant/30 bg-surface-container-lowest flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary text-xl">manage_accounts</span>
+                <span className="font-bold text-sm text-on-surface">Sesuaikan Data Pegawai & Pejabat Penilai</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsEditModalOpen(false)}
+                className="w-8 h-8 rounded-full hover:bg-surface-container flex items-center justify-center text-on-surface-variant cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-lg">close</span>
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveProfiles} className="p-6 space-y-6 max-h-[80vh] overflow-y-auto text-xs">
+              {/* Kolom Pegawai */}
+              <div className="space-y-3">
+                <h4 className="font-bold text-primary uppercase border-b border-outline-variant/40 pb-1 flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-sm">person</span>
+                  I. Pegawai yang Dinilai
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-bold text-on-surface-variant block mb-1">Nama Lengkap & Gelar:</label>
+                    <input
+                      type="text"
+                      value={pegawaiProfile.nama}
+                      onChange={e => setPegawaiProfile({ ...pegawaiProfile, nama: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl border border-outline-variant/40 focus:border-primary text-xs"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-on-surface-variant block mb-1">NPPU / NIP:</label>
+                    <input
+                      type="text"
+                      value={pegawaiProfile.nip}
+                      onChange={e => setPegawaiProfile({ ...pegawaiProfile, nip: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl border border-outline-variant/40 focus:border-primary text-xs font-mono"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-on-surface-variant block mb-1">Pangkat / Gol. Ruang:</label>
+                    <input
+                      type="text"
+                      value={pegawaiProfile.pangkatGol}
+                      onChange={e => setPegawaiProfile({ ...pegawaiProfile, pangkatGol: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl border border-outline-variant/40 focus:border-primary text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-on-surface-variant block mb-1">Jabatan:</label>
+                    <input
+                      type="text"
+                      value={pegawaiProfile.jabatan}
+                      onChange={e => setPegawaiProfile({ ...pegawaiProfile, jabatan: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl border border-outline-variant/40 focus:border-primary text-xs"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="font-bold text-on-surface-variant block mb-1">Unit Kerja:</label>
+                    <input
+                      type="text"
+                      value={pegawaiProfile.unitKerja}
+                      onChange={e => setPegawaiProfile({ ...pegawaiProfile, unitKerja: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl border border-outline-variant/40 focus:border-primary text-xs"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Kolom Pejabat Penilai */}
+              <div className="space-y-3">
+                <h4 className="font-bold text-primary uppercase border-b border-outline-variant/40 pb-1 flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-sm">verified</span>
+                  II. Pejabat Penilai Kinerja (Atasan Langsung)
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-bold text-on-surface-variant block mb-1">Nama Pejabat Penilai:</label>
+                    <input
+                      type="text"
+                      value={penilaiProfile.nama}
+                      onChange={e => setPenilaiProfile({ ...penilaiProfile, nama: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl border border-outline-variant/40 focus:border-primary text-xs"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-on-surface-variant block mb-1">NPPU / NIP Penilai:</label>
+                    <input
+                      type="text"
+                      value={penilaiProfile.nip}
+                      onChange={e => setPenilaiProfile({ ...penilaiProfile, nip: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl border border-outline-variant/40 focus:border-primary text-xs font-mono"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-on-surface-variant block mb-1">Pangkat / Gol. Ruang Penilai:</label>
+                    <input
+                      type="text"
+                      value={penilaiProfile.pangkatGol}
+                      onChange={e => setPenilaiProfile({ ...penilaiProfile, pangkatGol: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl border border-outline-variant/40 focus:border-primary text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-on-surface-variant block mb-1">Jabatan Penilai:</label>
+                    <input
+                      type="text"
+                      value={penilaiProfile.jabatan}
+                      onChange={e => setPenilaiProfile({ ...penilaiProfile, jabatan: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl border border-outline-variant/40 focus:border-primary text-xs"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="font-bold text-on-surface-variant block mb-1">Unit Kerja Penilai:</label>
+                    <input
+                      type="text"
+                      value={penilaiProfile.unitKerja}
+                      onChange={e => setPenilaiProfile({ ...penilaiProfile, unitKerja: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl border border-outline-variant/40 focus:border-primary text-xs"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-outline-variant/30 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsEditModalOpen(false)}
+                  className="px-4 py-2 rounded-xl border border-outline-variant/40 text-on-surface font-bold text-xs"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-primary text-white font-bold text-xs shadow-md shadow-primary/20"
+                >
+                  Terapkan & Simpan
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -71,10 +71,13 @@ interface CascadingContextType {
   agreedTasksForSKP: Array<{
     id: string
     title: string
-    target: number
+    target: number | string
     satuan: string
     parentTitle?: string
     isDirectSync?: boolean
+    indikatorKinerja?: string
+    jenisKinerja?: 'utama' | 'tambahan'
+    assignedByUser?: User | null
   }>
   isViewOnly: boolean
   subordinateRoleTarget: string | null
@@ -362,15 +365,69 @@ export function CascadingProvider({ children }: { children: React.ReactNode }) {
   }, [laporanList, user])
 
   const agreedTasksForSKP = useMemo(() => {
-    return incomingTasks.filter((t: any) => t.status === 'agreed').map((t: any) => ({
-      id: t.id,
-      title: t.nama_sub_uraian || t.nama_uraian || t.nama_output || t.parent_sukpa?.iku?.nama_iku || t.iku?.nama_iku || 'Rencana Kinerja',
-      target: t.target,
-      satuan: t.satuan,
-      parentTitle: t.parent_uraian?.nama_uraian || t.parent_output?.nama_output || t.parent_unit?.nama_output || t.parent_sukpa?.iku?.nama_iku,
-      isDirectSync: t.is_direct_sync,
-    }))
-  }, [incomingTasks])
+    // 1. Rektor: Berisi Master 32 IKU Universitas
+    if (role === 'rektor') {
+      return masterIkuList.map((iku, idx) => ({
+        id: iku.id || `rektor-iku-${idx}`,
+        title: `Pencapaian Indikator Kinerja Utama [IKU ${iku.kode_iku}] ${iku.nama_iku}`,
+        target: iku.target_default || '100',
+        satuan: iku.satuan_default || '%',
+        parentTitle: 'Sasaran Strategis Universitas Diponegoro',
+        isDirectSync: false,
+        indikatorKinerja: `Pencapaian target ${iku.nama_iku} sebesar ${iku.target_default || '100'} ${iku.satuan_default || '%'} diproses 100%`,
+        jenisKinerja: 'utama' as const,
+        assignedByUser: null,
+      }))
+    }
+
+    // 2. Roles lainnya: Berdasarkan hierarki tugas cascading yang telah disepakati (status = 'agreed')
+    return incomingTasks
+      .filter((t: any) => t.status === 'agreed')
+      .map((t: any) => {
+        let title = ''
+        let parentTitle = ''
+        let indikatorKinerja = ''
+
+        if (role === 'pimpinan_sukpa') {
+          const ikuName = t.iku?.nama_iku || 'IKU SUKPA'
+          title = `Pencapaian IKU [${t.iku?.kode_iku || ''}] ${ikuName}`
+          parentTitle = 'Sasaran Strategis Rektor Universitas Diponegoro'
+          indikatorKinerja = `Tercapainya target ${ikuName} sebesar ${t.target} ${t.satuan} diproses 100%`
+        } else if (role === 'pimpinan_unit') {
+          const ikuName = t.parent_sukpa?.iku?.nama_iku || 'IKU Unit'
+          title = `Pencapaian IKU [${t.parent_sukpa?.iku?.kode_iku || ''}] ${ikuName} pada Unit Kerja`
+          parentTitle = t.parent_sukpa?.iku?.nama_iku || 'Sasaran Strategis Pimpinan SUKPA'
+          indikatorKinerja = `Tercapainya target IKU sebesar ${t.target} ${t.satuan} pada unit kerja diproses 100%`
+        } else if (role === 'wakil_pimpinan_unit' || role === 'manajer') {
+          title = t.nama_output || 'Output Kinerja Manajer'
+          parentTitle = t.parent_unit?.parent_sukpa?.iku?.nama_iku || 'IKU Pimpinan Unit'
+          indikatorKinerja = `Terprosesnya ${title} sebanyak ${t.target} ${t.satuan} diproses 100%`
+        } else if (role === 'supervisor') {
+          title = t.nama_uraian || 'Uraian Tugas Supervisor'
+          parentTitle = t.parent_output?.nama_output || 'Output Manajer'
+          indikatorKinerja = `Terlaksananya ${title} sebanyak ${t.target} ${t.satuan} diproses 100%`
+        } else if (role === 'staff') {
+          title = t.nama_sub_uraian || 'Sub-Uraian Tugas Staf'
+          parentTitle = t.parent_uraian?.nama_uraian || 'Uraian Tugas Supervisor'
+          indikatorKinerja = `Terprosesnya ${title} sebanyak ${t.target} ${t.satuan} diproses 100%`
+        } else {
+          title = t.nama_sub_uraian || t.nama_uraian || t.nama_output || t.parent_sukpa?.iku?.nama_iku || t.iku?.nama_iku || 'Rencana Kinerja'
+          indikatorKinerja = `Terprosesnya ${title} sebanyak ${t.target} ${t.satuan} diproses 100%`
+        }
+
+        return {
+          id: t.id,
+          title,
+          target: t.target,
+          satuan: t.satuan,
+          parentTitle,
+          isDirectSync: t.is_direct_sync,
+          indikatorKinerja,
+          jenisKinerja: (t.jenis_kinerja || 'utama') as 'utama' | 'tambahan',
+          assignedByUser: t.assigned_by_user || null,
+        }
+      })
+  }, [incomingTasks, role, masterIkuList])
 
   // Open Modal Splitter for Parent Item
   const openSplitterForParent = async (parent: any, type: 'iku_sukpa' | 'iku_unit' | 'output' | 'uraian' | 'sub_uraian') => {
