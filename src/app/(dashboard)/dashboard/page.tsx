@@ -58,7 +58,21 @@ export default function DashboardPage() {
       let incoming: any[] = []
       if (role === 'rektor') {
         const { data: ikus } = await supabase.from('master_iku').select('*')
-        incoming = (ikus || []).map(i => ({
+        // Group by unique kode_iku agar hanya 32 IKU yang muncul, bukan seluruh 600 baris output
+        const uniqueIkus = new Map<string, any>()
+        ;(ikus || []).forEach(i => {
+          if (!uniqueIkus.has(i.kode_iku)) {
+            uniqueIkus.set(i.kode_iku, i)
+          }
+        })
+        const sortedIkus = Array.from(uniqueIkus.values()).sort((a, b) => {
+          const numA = parseInt(a.kode_iku, 10)
+          const numB = parseInt(b.kode_iku, 10)
+          if (!isNaN(numA) && !isNaN(numB)) return numA - numB
+          return a.kode_iku.localeCompare(b.kode_iku)
+        })
+
+        incoming = sortedIkus.map(i => ({
           id: i.id,
           title: `[IKU ${i.kode_iku}] ${i.nama_iku}`,
           target: i.target_default || '100',

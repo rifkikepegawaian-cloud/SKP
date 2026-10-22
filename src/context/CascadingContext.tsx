@@ -365,9 +365,9 @@ export function CascadingProvider({ children }: { children: React.ReactNode }) {
   }, [laporanList, user])
 
   const agreedTasksForSKP = useMemo(() => {
-    // 1. Rektor: Berisi Master 32 IKU Universitas
+    // 1. Rektor: Berisi 32 IKU Universitas (Grouped by unique kode_iku)
     if (role === 'rektor') {
-      return masterIkuList.map((iku, idx) => ({
+      return groupedIkuList.map((iku, idx) => ({
         id: iku.id || `rektor-iku-${idx}`,
         title: `Pencapaian Indikator Kinerja Utama [IKU ${iku.kode_iku}] ${iku.nama_iku}`,
         target: iku.target_default || '100',
@@ -427,7 +427,7 @@ export function CascadingProvider({ children }: { children: React.ReactNode }) {
           assignedByUser: t.assigned_by_user || null,
         }
       })
-  }, [incomingTasks, role, masterIkuList])
+  }, [incomingTasks, role, groupedIkuList])
 
   // Open Modal Splitter for Parent Item
   const openSplitterForParent = async (parent: any, type: 'iku_sukpa' | 'iku_unit' | 'output' | 'uraian' | 'sub_uraian') => {
