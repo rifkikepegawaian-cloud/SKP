@@ -16,7 +16,19 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard',             icon: 'dashboard',             label: 'Dashboard',             roles: ['staff', 'supervisor', 'manajer', 'pimpinan_unit', 'wakil_pimpinan_unit', 'pimpinan_sukpa', 'rektor', 'admin'] },
-  { href: '/cascading',             icon: 'account_tree',          label: 'Cascading & Rencana SKP', roles: ['staff', 'supervisor', 'manajer', 'pimpinan_unit', 'wakil_pimpinan_unit', 'pimpinan_sukpa', 'rektor', 'admin'] },
+  { 
+    href: '/cascading',             
+    icon: 'account_tree',          
+    label: 'Cascading & Rencana SKP', 
+    roles: ['staff', 'supervisor', 'manajer', 'pimpinan_unit', 'wakil_pimpinan_unit', 'pimpinan_sukpa', 'rektor', 'admin'],
+    children: [
+      { href: '/cascading/penugasan',      icon: 'call_split',   label: 'Penugasan ke Bawahan',         roles: ['supervisor', 'manajer', 'pimpinan_unit', 'wakil_pimpinan_unit', 'pimpinan_sukpa', 'rektor', 'admin'] },
+      { href: '/cascading/dialog-kinerja', icon: 'forum',        label: 'Tugas Masuk & Dialog Kinerja', roles: ['staff', 'supervisor', 'manajer', 'pimpinan_unit', 'wakil_pimpinan_unit', 'pimpinan_sukpa', 'admin'] },
+      { href: '/cascading/matriks',        icon: 'hub',          label: 'Matriks & Pohon Cascading',    roles: ['staff', 'supervisor', 'manajer', 'pimpinan_unit', 'wakil_pimpinan_unit', 'pimpinan_sukpa', 'rektor', 'admin'] },
+      { href: '/cascading/cetak-skp',      icon: 'print',        label: 'Cetak Dokumen Rencana SKP',    roles: ['staff', 'supervisor', 'manajer', 'pimpinan_unit', 'wakil_pimpinan_unit', 'pimpinan_sukpa', 'rektor', 'admin'] },
+    ]
+  },
+  { href: '/pelaporan-capaian',     icon: 'fact_check',            label: 'Pelaporan & Verifikasi Capaian', roles: ['staff', 'supervisor', 'manajer', 'pimpinan_unit', 'wakil_pimpinan_unit', 'pimpinan_sukpa', 'rektor', 'admin'] },
   { href: '/monitoring',            icon: 'query_stats',           label: 'Monitoring Kinerja',    roles: ['supervisor', 'manajer', 'pimpinan_unit', 'wakil_pimpinan_unit', 'pimpinan_sukpa', 'rektor', 'admin'] },
   { href: '/admin/manajemen-periode', icon: 'date_range',          label: 'Manajemen Periode',     roles: ['admin'] },
   { href: '/admin/manajemen-iku',   icon: 'description',           label: 'Master 32 IKU',         roles: ['admin'] },
@@ -31,7 +43,7 @@ export default function Sidebar({ role = 'staff' }: SidebarProps) {
   const pathname = usePathname()
   const isSidebarOpen = useUIStore(state => state.isSidebarOpen)
   const toggleSidebar = useUIStore(state => state.toggleSidebar)
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ '/iku': true })
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ '/cascading': true })
 
   const toggleGroup = (href: string) => {
     setOpenGroups(prev => ({ ...prev, [href]: !prev[href] }))
