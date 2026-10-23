@@ -19,8 +19,10 @@ export interface ItemEvaluasiHasilKerja {
   realisasi: number
   persentase: number
   predikat: KategoriHasilKerja
+  angka: number
   umpanBalikPimpinan?: string
   buktiDukung?: string
+  narrativeRealisasi?: string
 }
 
 export default function EvaluasiHasilKerjaPage() {
@@ -45,10 +47,12 @@ export default function EvaluasiHasilKerjaPage() {
   // Realisasi overrides and feedback state (persisted in localStorage)
   const [customRealisasiMap, setCustomRealisasiMap] = useState<Record<string, number>>({})
   const [feedbackMap, setFeedbackMap] = useState<Record<string, string>>({})
+  const [narrativeRealisasiMap, setNarrativeRealisasiMap] = useState<Record<string, string>>({})
 
   // Modal edit realisasi / feedback
   const [selectedItemForEdit, setSelectedItemForEdit] = useState<ItemEvaluasiHasilKerja | null>(null)
   const [editRealisasiVal, setEditRealisasiVal] = useState<number>(0)
+  const [editNarrativeVal, setEditNarrativeVal] = useState<string>('')
   const [editFeedbackVal, setEditFeedbackVal] = useState<string>('')
   const [isModalOpen, setIsModalOpen] = useState(false)
 
@@ -66,7 +70,7 @@ export default function EvaluasiHasilKerjaPage() {
     return `evaluasi_hasil_kerja_${uid}_${periode?.id || '2026'}`
   }, [targetUser, periode])
 
-  // Load custom realisasi and feedback
+  // Load custom realisasi, feedback, and narrative realisasi
   useEffect(() => {
     try {
       const saved = localStorage.getItem(storageKey)
@@ -74,9 +78,11 @@ export default function EvaluasiHasilKerjaPage() {
         const parsed = JSON.parse(saved)
         if (parsed.realisasi) setCustomRealisasiMap(parsed.realisasi)
         if (parsed.feedback) setFeedbackMap(parsed.feedback)
+        if (parsed.realisasiText) setNarrativeRealisasiMap(parsed.realisasiText)
       } else {
         setCustomRealisasiMap({})
         setFeedbackMap({})
+        setNarrativeRealisasiMap({})
       }
     } catch (e) {
       console.warn('Error reading evaluasi from localStorage', e)
@@ -139,8 +145,17 @@ export default function EvaluasiHasilKerjaPage() {
 
         const pct = targetNum > 0 ? Math.round((realisasiNum / targetNum) * 100) : 0
         let predikat: KategoriHasilKerja = 'sesuai_ekspektasi'
-        if (realisasiNum < targetNum) predikat = 'dibawah_ekspektasi'
-        else if (realisasiNum > targetNum) predikat = 'diatas_ekspektasi'
+        let angka = 2
+        if (realisasiNum < targetNum) {
+          predikat = 'dibawah_ekspektasi'
+          angka = 1
+        } else if (realisasiNum > targetNum) {
+          predikat = 'diatas_ekspektasi'
+          angka = 3
+        }
+
+        const narrativeRealisasi = narrativeRealisasiMap[item.id] ||
+          `${realisasiNum} ${satuan} telah terlaksana dan bukti dukung telah diunggah sesuai target`
 
         return {
           id: item.id,
@@ -153,8 +168,10 @@ export default function EvaluasiHasilKerjaPage() {
           realisasi: realisasiNum,
           persentase: pct,
           predikat,
-          umpanBalikPimpinan: feedbackMap[item.id] || 'Tingkatkan efektivitas koordinasi dan pemenuhan bukti dukung berkala.',
+          angka,
+          umpanBalikPimpinan: feedbackMap[item.id] || 'baik dan pengelolaan waktu sudah sesuai dengan jadwal',
           buktiDukung: 'Laporan Progres & Berkas Administrasi',
+          narrativeRealisasi,
         }
       })
     }
@@ -171,8 +188,17 @@ export default function EvaluasiHasilKerjaPage() {
 
       const pct = targetNum > 0 ? Math.round((realisasiNum / targetNum) * 100) : 0
       let predikat: KategoriHasilKerja = 'sesuai_ekspektasi'
-      if (realisasiNum < targetNum) predikat = 'dibawah_ekspektasi'
-      else if (realisasiNum > targetNum) predikat = 'diatas_ekspektasi'
+      let angka = 2
+      if (realisasiNum < targetNum) {
+        predikat = 'dibawah_ekspektasi'
+        angka = 1
+      } else if (realisasiNum > targetNum) {
+        predikat = 'diatas_ekspektasi'
+        angka = 3
+      }
+
+      const narrativeRealisasi = narrativeRealisasiMap[task.id] ||
+        `${realisasiNum} ${satuan} telah terlaksana dan bukti dukung telah diunggah sesuai target`
 
       return {
         id: task.id,
@@ -185,11 +211,13 @@ export default function EvaluasiHasilKerjaPage() {
         realisasi: realisasiNum,
         persentase: pct,
         predikat,
-        umpanBalikPimpinan: feedbackMap[task.id] || 'Pertahankan ketepatan waktu pelaporan dan akurasi data dukung.',
+        angka,
+        umpanBalikPimpinan: feedbackMap[task.id] || 'baik dan pengelolaan waktu sudah sesuai dengan jadwal',
         buktiDukung: 'Link Google Drive / Dokumen Tersimpan',
+        narrativeRealisasi,
       }
     })
-  }, [viewMode, selectedSubordinateId, myAssignedTasks, role, agreedTasksForSKP, customRealisasiMap, feedbackMap])
+  }, [viewMode, selectedSubordinateId, myAssignedTasks, role, agreedTasksForSKP, customRealisasiMap, feedbackMap, narrativeRealisasiMap])
 
   // Filtered list by query and predikat
   const filteredItems = useMemo(() => {
@@ -249,24 +277,28 @@ export default function EvaluasiHasilKerjaPage() {
   const openEditModal = (item: ItemEvaluasiHasilKerja) => {
     setSelectedItemForEdit(item)
     setEditRealisasiVal(item.realisasi)
+    setEditNarrativeVal(item.narrativeRealisasi || '')
     setEditFeedbackVal(item.umpanBalikPimpinan || '')
     setIsModalOpen(true)
   }
 
-  // Save Edit Realisasi / Feedback
+  // Save Edit Realisasi / Feedback / Narrative
   const handleSaveEdit = () => {
     if (!selectedItemForEdit) return
 
     const newRealisasiMap = { ...customRealisasiMap, [selectedItemForEdit.id]: editRealisasiVal }
     const newFeedbackMap = { ...feedbackMap, [selectedItemForEdit.id]: editFeedbackVal }
+    const newNarrativeMap = { ...narrativeRealisasiMap, [selectedItemForEdit.id]: editNarrativeVal }
 
     setCustomRealisasiMap(newRealisasiMap)
     setFeedbackMap(newFeedbackMap)
+    setNarrativeRealisasiMap(newNarrativeMap)
 
     try {
       localStorage.setItem(storageKey, JSON.stringify({
         realisasi: newRealisasiMap,
         feedback: newFeedbackMap,
+        realisasiText: newNarrativeMap,
       }))
     } catch (e) {
       console.warn('Failed saving to localStorage', e)
@@ -276,13 +308,13 @@ export default function EvaluasiHasilKerjaPage() {
     Swal.fire({
       icon: 'success',
       title: 'Tersimpan!',
-      text: `Realisasi capaian dan umpan balik pimpinan berhasil diperbarui.`,
+      text: `Realisasi capaian, bukti dukung, dan umpan balik pimpinan berhasil diperbarui.`,
       timer: 1800,
       showConfirmButton: false,
     })
   }
 
-  // Helper badge for Predikat
+  // Helper badge for Predikat with Angka (3: Diatas, 2: Sesuai, 1: Dibawah)
   const renderPredikatBadge = (predikat: KategoriHasilKerja) => {
     switch (predikat) {
       case 'diatas_ekspektasi':
@@ -290,6 +322,9 @@ export default function EvaluasiHasilKerjaPage() {
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-purple-50 text-purple-700 border border-purple-200 shadow-2xs">
             <span className="material-symbols-outlined text-[15px] text-purple-600">military_tech</span>
             Diatas Ekspektasi
+            <span className="ml-1 px-1.5 py-0.2 rounded-full bg-purple-200 text-[10px] font-black text-purple-900">
+              Angka 3
+            </span>
           </span>
         )
       case 'sesuai_ekspektasi':
@@ -297,6 +332,9 @@ export default function EvaluasiHasilKerjaPage() {
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs">
             <span className="material-symbols-outlined text-[15px] text-emerald-600">check_circle</span>
             Sesuai Ekspektasi
+            <span className="ml-1 px-1.5 py-0.2 rounded-full bg-emerald-200 text-[10px] font-black text-emerald-900">
+              Angka 2
+            </span>
           </span>
         )
       case 'dibawah_ekspektasi':
@@ -304,6 +342,9 @@ export default function EvaluasiHasilKerjaPage() {
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200 shadow-2xs">
             <span className="material-symbols-outlined text-[15px] text-amber-600">trending_down</span>
             Dibawah Ekspektasi
+            <span className="ml-1 px-1.5 py-0.2 rounded-full bg-amber-200 text-[10px] font-black text-amber-900">
+              Angka 1
+            </span>
           </span>
         )
     }
@@ -725,7 +766,23 @@ export default function EvaluasiHasilKerjaPage() {
               })()}
 
               <div>
-                <label className="block font-bold text-on-surface mb-1">Umpan Balik Berkala Berdasarkan Bukti Dukung (Pimpinan)</label>
+                <label className="block font-bold text-on-surface mb-1">
+                  Realisasi Berdasarkan Bukti Dukung (Deskripsi Narasi Dokumen)
+                </label>
+                <textarea
+                  rows={2}
+                  value={editNarrativeVal}
+                  onChange={e => setEditNarrativeVal(e.target.value)}
+                  placeholder="Contoh: 4 dokumen telah diunggah ke drive tim pembuatan SIMPAK..."
+                  className="w-full bg-white border border-outline-variant/60 rounded-xl p-3 text-xs outline-none focus:ring-2 focus:ring-primary/20"
+                />
+                <p className="text-[10px] text-on-surface-variant mt-1">
+                  Teks narasi ini akan dicetak langsung pada kolom "REALISASI BERDASARKAN BUKTI DUKUNG" formulir evaluasi SKP.
+                </p>
+              </div>
+
+              <div>
+                <label className="block font-bold text-on-surface mb-1">Umpan Balik Berkelanjutan Berdasarkan Bukti Dukung (Pimpinan)</label>
                 <textarea
                   rows={3}
                   value={editFeedbackVal}
