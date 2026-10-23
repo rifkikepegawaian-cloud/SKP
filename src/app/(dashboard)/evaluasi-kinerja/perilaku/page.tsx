@@ -366,11 +366,11 @@ export default function EvaluasiPerilakuKerjaPage() {
               className="bg-surface-container-lowest border border-outline-variant/50 rounded-xl px-3 py-1.5 text-xs font-bold text-on-surface outline-none focus:ring-2 focus:ring-primary/20"
             >
               {subordinates.length === 0 ? (
-                <option value="">Rifki Rokhanudin, S.Si. (Staf Pengadministrasi Umum)</option>
+                <option value="">-- Belum ada bawahan --</option>
               ) : (
                 subordinates.map(sub => (
                   <option key={sub.id} value={sub.id}>
-                    {sub.pegawai?.nama_lengkap || sub.email} — {sub.pegawai?.nip || sub.role}
+                    {sub.pegawai?.nama_lengkap || sub.email} — {sub.pegawai?.jabatan || sub.pegawai?.nip || sub.role}
                   </option>
                 ))
               )}
@@ -386,7 +386,7 @@ export default function EvaluasiPerilakuKerjaPage() {
         <div className="lg:col-span-2 bg-white rounded-3xl border border-outline-variant/30 p-6 shadow-xs flex flex-col justify-between gap-4">
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 rounded-2xl bg-primary/10 text-primary font-bold text-lg flex items-center justify-center flex-shrink-0 shadow-inner">
-              {(currentTargetUser?.pegawai?.nama_lengkap || currentTargetUser?.email || 'Pegawai')
+              {(currentTargetUser?.pegawai?.nama_lengkap || currentTargetUser?.email || 'P')
                 .split(' ')
                 .slice(0, 2)
                 .map(n => n[0])
@@ -399,14 +399,14 @@ export default function EvaluasiPerilakuKerjaPage() {
                   Pegawai Yang Dinilai
                 </span>
                 <span className="text-[11px] text-outline font-mono">
-                  NIP: {currentTargetUser?.pegawai?.nip || 'H.7.199803202024051001'}
+                  NIP: {currentTargetUser?.pegawai?.nip || '-'}
                 </span>
               </div>
               <h3 className="text-base font-extrabold text-on-surface mt-0.5">
-                {currentTargetUser?.pegawai?.nama_lengkap || currentTargetUser?.email || 'Rifki Rokhanudin, S.Si.'}
+                {currentTargetUser?.pegawai?.nama_lengkap || currentTargetUser?.email || '-'}
               </h3>
               <p className="text-xs text-on-surface-variant">
-                {currentTargetUser?.pegawai?.jabatan || 'Pengadministrasi Umum'} • {currentTargetUser?.pegawai?.unit_es2 || 'Direktorat Sumber Daya Manusia'}
+                {currentTargetUser?.pegawai?.jabatan || (currentTargetUser?.role ? ROLE_LABELS[currentTargetUser.role.split(',')[0] as UserRole] : '-') || '-'} • {currentTargetUser?.pegawai?.unit_es2 || '-'}
               </p>
             </div>
           </div>

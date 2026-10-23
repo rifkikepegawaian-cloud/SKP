@@ -4,10 +4,6 @@ import React, { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { useCascading } from '@/context/CascadingContext'
 import { ROLE_LABELS, UserRole, User } from '@/lib/types'
-import {
-  SAMPLE_HASIL_KERJA_UTAMA,
-  SAMPLE_HASIL_KERJA_TAMBAHAN,
-} from '@/lib/constants/skpTemplateRifki'
 import Swal from 'sweetalert2'
 
 export type KategoriHasilKerja = 'dibawah_ekspektasi' | 'sesuai_ekspektasi' | 'diatas_ekspektasi'
@@ -36,6 +32,7 @@ export default function EvaluasiHasilKerjaPage() {
     agreedTasksForSKP,
     subordinates,
     groupedIkuList,
+    myAssignedTasks,
   } = useCascading()
 
   const isSuperior = role !== 'staff'
@@ -97,15 +94,49 @@ export default function EvaluasiHasilKerjaPage() {
   const rawEvaluasiItems: ItemEvaluasiHasilKerja[] = useMemo(() => {
     // 1. If subordinate mode is active
     if (viewMode === 'subordinate_results') {
-      const subRole = (targetUser?.role?.split(',')[0] as UserRole) || 'staff'
-      const sampleItems = [...SAMPLE_HASIL_KERJA_UTAMA, ...SAMPLE_HASIL_KERJA_TAMBAHAN]
-      return sampleItems.map((item, idx) => {
+      if (!selectedSubordinateId) return []
+
+      // Filter myAssignedTasks for this subordinate
+      const subTasks = myAssignedTasks.filter((t: any) => {
+        const subId =
+          t.staff_user_id ||
+          t.spv_user_id ||
+          t.manajer_user_id ||
+          t.unit_user_id ||
+          t.sukpa_user_id ||
+          t.staff_user?.id ||
+          t.spv_user?.id ||
+          t.manajer_user?.id ||
+          t.unit_user?.id ||
+          t.sukpa_user?.id
+        return subId === selectedSubordinateId && (t.status === 'agreed' || !t.status)
+      })
+
+      return subTasks.map((item: any) => {
+        const title =
+          item.nama_sub_uraian ||
+          item.nama_uraian ||
+          item.nama_output ||
+          item.parent_unit?.parent_sukpa?.iku?.nama_iku ||
+          item.parent_sukpa?.iku?.nama_iku ||
+          item.iku?.nama_iku ||
+          'Rencana Hasil Kerja'
+
+        const parentTitle =
+          item.parent_uraian?.nama_uraian ||
+          item.parent_output?.nama_output ||
+          item.parent_unit?.parent_sukpa?.iku?.nama_iku ||
+          item.parent_sukpa?.iku?.nama_iku ||
+          item.iku?.nama_iku ||
+          `Sasaran Pimpinan ${ROLE_LABELS[role] || 'Atasan'}`
+
         const targetNum = Number(item.target) || 100
-        // Use custom realisasi if set, otherwise realistic default for demonstration
+        const satuan = item.satuan || 'Dokumen'
+        const approvedRealisasi = item.capaian_approved ?? item.capaian_realisasi ?? 0
         const realisasiNum = customRealisasiMap[item.id] !== undefined
           ? customRealisasiMap[item.id]
-          : (idx === 0 ? targetNum : idx === 1 ? Math.round(targetNum * 0.85) : Math.round(targetNum * 1.1))
-        
+          : approvedRealisasi
+
         const pct = targetNum > 0 ? Math.round((realisasiNum / targetNum) * 100) : 0
         let predikat: KategoriHasilKerja = 'sesuai_ekspektasi'
         if (realisasiNum < targetNum) predikat = 'dibawah_ekspektasi'
@@ -113,12 +144,12 @@ export default function EvaluasiHasilKerjaPage() {
 
         return {
           id: item.id,
-          title: item.title,
-          parentTitle: `Sasaran Pimpinan ${ROLE_LABELS[role] || 'Atasan'}`,
-          indikatorKinerja: item.indikatorKinerja,
-          jenisKinerja: item.jenisKinerja,
+          title,
+          parentTitle,
+          indikatorKinerja: `Terlaksananya ${title} sejumlah ${targetNum} ${satuan} (100%)`,
+          jenisKinerja: (item.jenis_kinerja || 'utama') as 'utama' | 'tambahan',
           target: targetNum,
-          satuan: item.satuan || '%',
+          satuan,
           realisasi: realisasiNum,
           persentase: pct,
           predikat,
@@ -129,70 +160,36 @@ export default function EvaluasiHasilKerjaPage() {
     }
 
     // 2. Personal Mode (Hasil Kerja Saya)
-    const hasAgreed = agreedTasksForSKP.length > 0
-    let baseList: any[] = []
+    // Strictly map agreedTasksForSKP - no mock fallback!
+    return agreedTasksForSKP.map((task) => {
+      const targetNum = Number(task.target) || 100
+      const satuan = task.satuan || 'Dokumen'
+      const approvedRealisasi = task.capaian_approved ?? task.capaian_realisasi ?? 0
+      const realisasiNum = customRealisasiMap[task.id] !== undefined
+        ? customRealisasiMap[task.id]
+        : approvedRealisasi
 
-    if (hasAgreed) {
-      baseList = agreedTasksForSKP.map((task, idx) => {
-        const targetNum = Number(task.target) || 100
-        // Check custom realisasi, or approved capaian, or default
-        const realisasiNum = customRealisasiMap[task.id] !== undefined
-          ? customRealisasiMap[task.id]
-          : (idx === 0 ? targetNum : idx === 1 ? Math.round(targetNum * 0.75) : targetNum)
+      const pct = targetNum > 0 ? Math.round((realisasiNum / targetNum) * 100) : 0
+      let predikat: KategoriHasilKerja = 'sesuai_ekspektasi'
+      if (realisasiNum < targetNum) predikat = 'dibawah_ekspektasi'
+      else if (realisasiNum > targetNum) predikat = 'diatas_ekspektasi'
 
-        const pct = targetNum > 0 ? Math.round((realisasiNum / targetNum) * 100) : 0
-        let predikat: KategoriHasilKerja = 'sesuai_ekspektasi'
-        if (realisasiNum < targetNum) predikat = 'dibawah_ekspektasi'
-        else if (realisasiNum > targetNum) predikat = 'diatas_ekspektasi'
-
-        return {
-          id: task.id,
-          title: task.title,
-          parentTitle: task.parentTitle,
-          indikatorKinerja: task.indikatorKinerja,
-          jenisKinerja: task.jenisKinerja || 'utama',
-          target: targetNum,
-          satuan: task.satuan || 'Dokumen',
-          realisasi: realisasiNum,
-          persentase: pct,
-          predikat,
-          umpanBalikPimpinan: feedbackMap[task.id] || 'Pertahankan ketepatan waktu pelaporan dan akurasi data dukung.',
-          buktiDukung: 'Link Google Drive / Dokumen Tersimpan',
-        }
-      })
-    } else {
-      // Authentic UNDIP template items
-      const sampleItems = [...SAMPLE_HASIL_KERJA_UTAMA, ...SAMPLE_HASIL_KERJA_TAMBAHAN]
-      baseList = sampleItems.map((item, idx) => {
-        const targetNum = Number(item.target) || 100
-        const realisasiNum = customRealisasiMap[item.id] !== undefined
-          ? customRealisasiMap[item.id]
-          : (idx === 0 ? targetNum : idx === 1 ? 10 : Math.round(targetNum * 1.05))
-
-        const pct = targetNum > 0 ? Math.round((realisasiNum / targetNum) * 100) : 0
-        let predikat: KategoriHasilKerja = 'sesuai_ekspektasi'
-        if (realisasiNum < targetNum) predikat = 'dibawah_ekspektasi'
-        else if (realisasiNum > targetNum) predikat = 'diatas_ekspektasi'
-
-        return {
-          id: item.id,
-          title: item.title,
-          parentTitle: 'Sasaran Strategis Universitas Diponegoro',
-          indikatorKinerja: item.indikatorKinerja,
-          jenisKinerja: item.jenisKinerja,
-          target: targetNum,
-          satuan: item.satuan || 'Dokumen',
-          realisasi: realisasiNum,
-          persentase: pct,
-          predikat,
-          umpanBalikPimpinan: feedbackMap[item.id] || 'Capaian telah sesuai dengan rencana kerja triwulanan.',
-          buktiDukung: 'Google Drive Dokumen SIMPAK / SOP',
-        }
-      })
-    }
-
-    return baseList
-  }, [viewMode, targetUser, role, agreedTasksForSKP, customRealisasiMap, feedbackMap])
+      return {
+        id: task.id,
+        title: task.title,
+        parentTitle: task.parentTitle,
+        indikatorKinerja: task.indikatorKinerja,
+        jenisKinerja: task.jenisKinerja || 'utama',
+        target: targetNum,
+        satuan,
+        realisasi: realisasiNum,
+        persentase: pct,
+        predikat,
+        umpanBalikPimpinan: feedbackMap[task.id] || 'Pertahankan ketepatan waktu pelaporan dan akurasi data dukung.',
+        buktiDukung: 'Link Google Drive / Dokumen Tersimpan',
+      }
+    })
+  }, [viewMode, selectedSubordinateId, myAssignedTasks, role, agreedTasksForSKP, customRealisasiMap, feedbackMap])
 
   // Filtered list by query and predikat
   const filteredItems = useMemo(() => {
@@ -408,11 +405,11 @@ export default function EvaluasiHasilKerjaPage() {
                 className="bg-surface-container-lowest border border-outline-variant/50 rounded-xl px-3 py-1.5 text-xs font-bold text-on-surface outline-none focus:ring-2 focus:ring-primary/20"
               >
                 {subordinates.length === 0 ? (
-                  <option value="">Rifki Rokhanudin, S.Si. (Staf Pengadministrasi Umum)</option>
+                  <option value="">-- Belum ada bawahan --</option>
                 ) : (
                   subordinates.map(sub => (
                     <option key={sub.id} value={sub.id}>
-                      {sub.pegawai?.nama_lengkap || sub.email} — {sub.pegawai?.nip || sub.role}
+                      {sub.pegawai?.nama_lengkap || sub.email} — {sub.pegawai?.jabatan || sub.pegawai?.nip || sub.role}
                     </option>
                   ))
                 )}

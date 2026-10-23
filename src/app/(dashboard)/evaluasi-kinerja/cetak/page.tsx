@@ -5,13 +5,7 @@ import Link from 'next/link'
 import { useCascading } from '@/context/CascadingContext'
 import { ROLE_LABELS, UserRole } from '@/lib/types'
 import { ASPEK_BERAKHLAK } from '@/lib/constants/perilakuKerja'
-import {
-  ProfileSKP,
-  DEFAULT_PEGAWAI_RIFKI,
-  DEFAULT_PENILAI_MONA,
-  SAMPLE_HASIL_KERJA_UTAMA,
-  SAMPLE_HASIL_KERJA_TAMBAHAN,
-} from '@/lib/constants/skpTemplateRifki'
+import { ProfileSKP } from '@/lib/constants/skpTemplateRifki'
 import Swal from 'sweetalert2'
 
 export default function CetakDokumenEvaluasiSKPPage() {
@@ -27,22 +21,22 @@ export default function CetakDokumenEvaluasiSKPPage() {
   const [periodeText, setPeriodeText] = useState('1 Januari 2026 s.d. 31 Desember 2026')
   const [tanggalPenetapan, setTanggalPenetapan] = useState('Semarang, 31 Desember 2026')
 
-  // Identitas Pegawai Yang Dinilai
+  // Identitas Pegawai Yang Dinilai (Data Riil)
   const [pegawaiProfile, setPegawaiProfile] = useState<ProfileSKP>(() => ({
-    nama: user?.pegawai?.nama_lengkap || user?.email || DEFAULT_PEGAWAI_RIFKI.nama,
-    nip: user?.pegawai?.nip || DEFAULT_PEGAWAI_RIFKI.nip,
-    pangkatGol: user?.pegawai?.pangkat_golongan || 'Setara Penata Muda/ Set. III/a',
-    jabatan: user?.pegawai?.jabatan || ROLE_LABELS[role] || DEFAULT_PEGAWAI_RIFKI.jabatan,
-    unitKerja: user?.pegawai?.unit_es2 || DEFAULT_PEGAWAI_RIFKI.unitKerja,
+    nama: user?.pegawai?.nama_lengkap || user?.email || '-',
+    nip: user?.pegawai?.nip || '-',
+    pangkatGol: user?.pegawai?.pangkat_golongan || '-',
+    jabatan: user?.pegawai?.jabatan || (role ? ROLE_LABELS[role] : '-'),
+    unitKerja: user?.pegawai?.unit_es2 || '-',
   }))
 
   // Identitas Pejabat Penilai Kinerja (Atasan Langsung)
   const [penilaiProfile, setPenilaiProfile] = useState<ProfileSKP>(() => ({
-    nama: DEFAULT_PENILAI_MONA.nama,
-    nip: DEFAULT_PENILAI_MONA.nip,
-    pangkatGol: DEFAULT_PENILAI_MONA.pangkatGol,
-    jabatan: DEFAULT_PENILAI_MONA.jabatan,
-    unitKerja: DEFAULT_PENILAI_MONA.unitKerja,
+    nama: 'Pejabat Penilai Kinerja',
+    nip: '-',
+    pangkatGol: '-',
+    jabatan: 'Atasan Langsung',
+    unitKerja: user?.pegawai?.unit_es2 || '-',
   }))
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
@@ -56,88 +50,97 @@ export default function CetakDokumenEvaluasiSKPPage() {
       nama: user.pegawai?.nama_lengkap || user.email || prev.nama,
       nip: user.pegawai?.nip || prev.nip,
       pangkatGol: user.pegawai?.pangkat_golongan || prev.pangkatGol,
-      jabatan: user.pegawai?.jabatan || ROLE_LABELS[role] || prev.jabatan,
+      jabatan: user.pegawai?.jabatan || (role ? ROLE_LABELS[role] : prev.jabatan),
       unitKerja: user.pegawai?.unit_es2 || prev.unitKerja,
     }))
 
     const firstAssignedByUser = agreedTasksForSKP.find(t => t.assignedByUser)?.assignedByUser
     if (firstAssignedByUser?.pegawai) {
       setPenilaiProfile({
-        nama: firstAssignedByUser.pegawai.nama_lengkap || DEFAULT_PENILAI_MONA.nama,
-        nip: firstAssignedByUser.pegawai.nip || DEFAULT_PENILAI_MONA.nip,
-        pangkatGol: firstAssignedByUser.pegawai.pangkat_golongan || 'Setara Penata Muda/ Set. III/a',
-        jabatan: firstAssignedByUser.pegawai.jabatan || ROLE_LABELS[firstAssignedByUser.role as UserRole] || DEFAULT_PENILAI_MONA.jabatan,
-        unitKerja: firstAssignedByUser.pegawai.unit_es2 || user.pegawai?.unit_es2 || DEFAULT_PENILAI_MONA.unitKerja,
+        nama: firstAssignedByUser.pegawai.nama_lengkap || firstAssignedByUser.email || '-',
+        nip: firstAssignedByUser.pegawai.nip || '-',
+        pangkatGol: firstAssignedByUser.pegawai.pangkat_golongan || '-',
+        jabatan: firstAssignedByUser.pegawai.jabatan || ROLE_LABELS[firstAssignedByUser.role as UserRole] || 'Atasan Langsung',
+        unitKerja: firstAssignedByUser.pegawai.unit_es2 || user.pegawai?.unit_es2 || '-',
       })
     }
   }, [user, role, agreedTasksForSKP])
 
-  // Evaluasi Hasil Kerja Items
-  const hasilKerjaList = useMemo(() => {
-    const hasAgreed = agreedTasksForSKP.length > 0
-    const sampleItems = [...SAMPLE_HASIL_KERJA_UTAMA, ...SAMPLE_HASIL_KERJA_TAMBAHAN]
+  // Saved data from Evaluasi Hasil Kerja and Perilaku
+  const [customRealisasiMap, setCustomRealisasiMap] = useState<Record<string, number>>({})
+  const [feedbackMap, setFeedbackMap] = useState<Record<string, string>>({})
+  const [perilakuMap, setPerilakuMap] = useState<Record<number, any>>({})
 
-    if (hasAgreed) {
-      return agreedTasksForSKP.map((task, idx) => {
-        const targetNum = Number(task.target) || 100
-        const realisasiNum = idx === 0 ? targetNum : idx === 1 ? Math.round(targetNum * 0.9) : targetNum
-        const pct = targetNum > 0 ? Math.round((realisasiNum / targetNum) * 100) : 0
-        let predikat = 'Sesuai Ekspektasi'
-        if (realisasiNum < targetNum) predikat = 'Dibawah Ekspektasi'
-        else if (realisasiNum > targetNum) predikat = 'Diatas Ekspektasi'
-
-        return {
-          id: task.id,
-          title: task.title,
-          parentTitle: task.parentTitle || 'Sasaran Strategis Universitas Diponegoro',
-          indikatorKinerja: task.indikatorKinerja || `Tercapainya target ${task.title} diproses 100%`,
-          jenisKinerja: task.jenisKinerja || 'utama',
-          target: targetNum,
-          satuan: task.satuan || 'Dokumen',
-          realisasi: realisasiNum,
-          persentase: pct,
-          predikat,
-          umpanBalik: 'Bukti dukung lengkap dan sesuai target rencana kerja berkala.',
-        }
-      })
+  useEffect(() => {
+    if (!user) return
+    const periodeId = periode?.id || '2026'
+    try {
+      const hkSaved = localStorage.getItem(`evaluasi_hasil_kerja_${user.id}_${periodeId}`)
+      if (hkSaved) {
+        const parsed = JSON.parse(hkSaved)
+        if (parsed.realisasi) setCustomRealisasiMap(parsed.realisasi)
+        if (parsed.feedback) setFeedbackMap(parsed.feedback)
+      }
+      const pkSaved = localStorage.getItem(`evaluasi_perilaku_${user.id}_${periodeId}`)
+      if (pkSaved) {
+        const parsedPk = JSON.parse(pkSaved)
+        setPerilakuMap(parsedPk)
+      }
+    } catch (e) {
+      console.warn('Error reading saved evaluasi from localStorage', e)
     }
+  }, [user, periode])
 
-    return sampleItems.map((item, idx) => {
-      const targetNum = Number(item.target) || 100
-      const realisasiNum = idx === 0 ? targetNum : idx === 1 ? 10 : Math.round(targetNum * 1.05)
+  // Evaluasi Hasil Kerja Items (Pure Real Data)
+  const hasilKerjaList = useMemo(() => {
+    return agreedTasksForSKP.map((task) => {
+      const targetNum = Number(task.target) || 100
+      const approvedVal = task.capaian_approved ?? task.capaian_realisasi ?? 0
+      const realisasiNum = customRealisasiMap[task.id] !== undefined
+        ? customRealisasiMap[task.id]
+        : approvedVal
       const pct = targetNum > 0 ? Math.round((realisasiNum / targetNum) * 100) : 0
       let predikat = 'Sesuai Ekspektasi'
       if (realisasiNum < targetNum) predikat = 'Dibawah Ekspektasi'
       else if (realisasiNum > targetNum) predikat = 'Diatas Ekspektasi'
 
       return {
-        id: item.id,
-        title: item.title,
-        parentTitle: 'Sasaran Strategis Universitas Diponegoro',
-        indikatorKinerja: item.indikatorKinerja,
-        jenisKinerja: item.jenisKinerja,
+        id: task.id,
+        title: task.title,
+        parentTitle: task.parentTitle || 'Sasaran Strategis Universitas Diponegoro',
+        indikatorKinerja: task.indikatorKinerja || `Tercapainya target ${task.title} diproses 100%`,
+        jenisKinerja: task.jenisKinerja || 'utama',
         target: targetNum,
-        satuan: item.satuan || 'Dokumen',
+        satuan: task.satuan || 'Dokumen',
         realisasi: realisasiNum,
         persentase: pct,
         predikat,
-        umpanBalik: 'Pekerjaan dilaksanakan dengan cermat dan tepat waktu.',
+        umpanBalik: feedbackMap[task.id] || 'Bukti dukung lengkap dan sesuai target rencana kerja berkala.',
       }
     })
-  }, [agreedTasksForSKP])
+  }, [agreedTasksForSKP, customRealisasiMap, feedbackMap])
 
   // Evaluasi Perilaku Kerja Items
   const perilakuList = useMemo(() => {
-    return ASPEK_BERAKHLAK.map(aspek => ({
-      id: aspek.id,
-      nama: aspek.nama,
-      definisi: aspek.tagline,
-      panduan: aspek.panduan,
-      ekspektasi: aspek.defaultEkspektasi,
-      rating: 'Sesuai Ekspektasi',
-      umpanBalik: 'Menunjukkan komitmen dan integritas yang konsisten dalam bekerja.',
-    }))
-  }, [])
+    return ASPEK_BERAKHLAK.map(aspek => {
+      const saved = perilakuMap[aspek.id]
+      const ratingLabel = saved?.rating === 'diatas_ekspektasi'
+        ? 'Diatas Ekspektasi'
+        : saved?.rating === 'dibawah_ekspektasi'
+        ? 'Dibawah Ekspektasi'
+        : 'Sesuai Ekspektasi'
+
+      return {
+        id: aspek.id,
+        nama: aspek.nama,
+        definisi: aspek.tagline,
+        panduan: aspek.panduan,
+        ekspektasi: saved?.ekspektasi_khusus || aspek.defaultEkspektasi,
+        rating: ratingLabel,
+        umpanBalik: saved?.umpan_balik || 'Menunjukkan komitmen dan integritas yang konsisten dalam bekerja.',
+      }
+    })
+  }, [perilakuMap])
 
   // Predikat Akhir Perhitungan (Hasil Kerja x Perilaku)
   const predikatEvaluasiAkhir = useMemo(() => {
@@ -147,11 +150,21 @@ export default function CetakDokumenEvaluasiSKPPage() {
     const countDiatasHK = hasilKerjaList.filter(i => i.predikat === 'Diatas Ekspektasi').length
 
     let ratingHasilKerja: string = 'Sesuai Ekspektasi'
-    if (countDibawahHK > totalHK / 2) ratingHasilKerja = 'Dibawah Ekspektasi'
-    else if (countDiatasHK > countDibawahHK) ratingHasilKerja = 'Diatas Ekspektasi'
+    if (totalHK > 0) {
+      if (countDibawahHK > totalHK / 2) ratingHasilKerja = 'Dibawah Ekspektasi'
+      else if (countDiatasHK > countDibawahHK) ratingHasilKerja = 'Diatas Ekspektasi'
+    }
 
     // Perilaku Kerja
+    const totalPK = perilakuList.length
+    const countDibawahPK = perilakuList.filter(i => i.rating === 'Dibawah Ekspektasi').length
+    const countDiatasPK = perilakuList.filter(i => i.rating === 'Diatas Ekspektasi').length
+
     let ratingPerilaku: string = 'Sesuai Ekspektasi'
+    if (totalPK > 0) {
+      if (countDibawahPK > totalPK / 2) ratingPerilaku = 'Dibawah Ekspektasi'
+      else if (countDiatasPK > countDibawahPK) ratingPerilaku = 'Diatas Ekspektasi'
+    }
 
     // Kuadran Kinerja
     let predikatKinerjaPegawai = 'BAIK'
@@ -166,7 +179,7 @@ export default function CetakDokumenEvaluasiSKPPage() {
       ratingPerilaku,
       predikatKinerjaPegawai,
     }
-  }, [hasilKerjaList])
+  }, [hasilKerjaList, perilakuList])
 
   const handlePrint = () => {
     window.print()
@@ -339,30 +352,38 @@ export default function CetakDokumenEvaluasiSKPPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-black">
-              {hasilKerjaList.map((item, idx) => (
-                <tr key={item.id} className="divide-x divide-black align-top">
-                  <td className="p-2 text-center font-bold">{idx + 1}</td>
-                  <td className="p-2">
-                    <p className="font-bold">{item.title}</p>
-                    {item.indikatorKinerja && (
-                      <p className="text-[10px] text-neutral-600 mt-0.5">
-                        Indikator: {item.indikatorKinerja}
-                      </p>
-                    )}
-                  </td>
-                  <td className="p-2 text-center font-semibold">{item.target} {item.satuan}</td>
-                  <td className="p-2 text-center font-bold">{item.realisasi} {item.satuan}</td>
-                  <td className="p-2 text-center font-bold">{item.persentase}%</td>
-                  <td className="p-2 text-center font-bold">
-                    <span className="px-1.5 py-0.5 rounded text-[10px]">
-                      {item.predikat}
-                    </span>
-                  </td>
-                  <td className="p-2 italic text-neutral-800">
-                    "{item.umpanBalik}"
+              {hasilKerjaList.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="p-4 text-center italic text-neutral-500 text-xs">
+                    Belum ada rencana hasil kerja yang disepakati untuk periode ini.
                   </td>
                 </tr>
-              ))}
+              ) : (
+                hasilKerjaList.map((item, idx) => (
+                  <tr key={item.id} className="divide-x divide-black align-top">
+                    <td className="p-2 text-center font-bold">{idx + 1}</td>
+                    <td className="p-2">
+                      <p className="font-bold">{item.title}</p>
+                      {item.indikatorKinerja && (
+                        <p className="text-[10px] text-neutral-600 mt-0.5">
+                          Indikator: {item.indikatorKinerja}
+                        </p>
+                      )}
+                    </td>
+                    <td className="p-2 text-center font-semibold">{item.target} {item.satuan}</td>
+                    <td className="p-2 text-center font-bold">{item.realisasi} {item.satuan}</td>
+                    <td className="p-2 text-center font-bold">{item.persentase}%</td>
+                    <td className="p-2 text-center font-bold">
+                      <span className="px-1.5 py-0.5 rounded text-[10px]">
+                        {item.predikat}
+                      </span>
+                    </td>
+                    <td className="p-2 italic text-neutral-800">
+                      "{item.umpanBalik}"
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

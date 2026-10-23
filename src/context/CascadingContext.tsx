@@ -78,6 +78,8 @@ interface CascadingContextType {
     indikatorKinerja?: string
     jenisKinerja?: 'utama' | 'tambahan'
     assignedByUser?: User | null
+    capaian_realisasi?: number
+    capaian_approved?: number
   }>
   isViewOnly: boolean
   subordinateRoleTarget: string | null
@@ -377,6 +379,8 @@ export function CascadingProvider({ children }: { children: React.ReactNode }) {
         indikatorKinerja: `Pencapaian target ${iku.nama_iku} sebesar ${iku.target_default || '100'} ${iku.satuan_default || '%'} diproses 100%`,
         jenisKinerja: 'utama' as const,
         assignedByUser: null,
+        capaian_realisasi: 0,
+        capaian_approved: 0,
       }))
     }
 
@@ -425,6 +429,8 @@ export function CascadingProvider({ children }: { children: React.ReactNode }) {
           indikatorKinerja,
           jenisKinerja: (t.jenis_kinerja || 'utama') as 'utama' | 'tambahan',
           assignedByUser: t.assigned_by_user || null,
+          capaian_realisasi: t.capaian_realisasi || 0,
+          capaian_approved: t.capaian_approved || 0,
         }
       })
   }, [incomingTasks, role, groupedIkuList])

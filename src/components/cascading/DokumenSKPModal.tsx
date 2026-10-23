@@ -3,11 +3,7 @@
 import React, { useState } from 'react'
 import { User, ROLE_LABELS, MasterPeriodeSKP } from '@/lib/types'
 import { ASPEK_BERAKHLAK } from '@/lib/constants/perilakuKerja'
-import {
-  SAMPLE_HASIL_KERJA_UTAMA,
-  DEFAULT_PEGAWAI_RIFKI,
-  DEFAULT_PENILAI_MONA,
-} from '@/lib/constants/skpTemplateRifki'
+// Dokumen SKP Modal without mock Rifki fallbacks
 
 interface DokumenSKPModalProps {
   isOpen: boolean
@@ -40,26 +36,23 @@ export default function DokumenSKPModal({
     window.print()
   }
 
-  const periodeTahun = periode?.tahun || '2025'
+  const periodeTahun = periode?.tahun || '2026'
   const periodeMulai = periode?.tgl_mulai_cascading || `03 Januari ${periodeTahun}`
   const periodeAkhir = periode?.tgl_akhir_cascading || `31 Desember ${periodeTahun}`
 
-  // Determine tasks to display
-  const displayTasks = tasks.length > 0 ? tasks : SAMPLE_HASIL_KERJA_UTAMA
+  // Pegawai Info (Real Data)
+  const namaPegawai = pegawaiUser?.pegawai?.nama_lengkap || pegawaiUser?.email || '-'
+  const nipPegawai = pegawaiUser?.pegawai?.nip || '-'
+  const pangkatPegawai = pegawaiUser?.pegawai?.pangkat_golongan || '-'
+  const jabatanPegawai = pegawaiUser?.pegawai?.jabatan || (pegawaiUser?.role ? (ROLE_LABELS as Record<string, string>)[pegawaiUser.role.split(',')[0]] : '-') || '-'
+  const unitPegawai = pegawaiUser?.pegawai?.unit_es2 || '-'
 
-  // Pegawai Info
-  const namaPegawai = pegawaiUser?.pegawai?.nama_lengkap || pegawaiUser?.email || DEFAULT_PEGAWAI_RIFKI.nama
-  const nipPegawai = pegawaiUser?.pegawai?.nip || DEFAULT_PEGAWAI_RIFKI.nip
-  const pangkatPegawai = 'Setara Penata Muda/ Set. III/a'
-  const jabatanPegawai = pegawaiUser?.pegawai?.jabatan || DEFAULT_PEGAWAI_RIFKI.jabatan
-  const unitPegawai = pegawaiUser?.pegawai?.unit_es2 || DEFAULT_PEGAWAI_RIFKI.unitKerja
-
-  // Atasan Info
-  const namaPenilai = atasanUser?.pegawai?.nama_lengkap || atasanUser?.email || DEFAULT_PENILAI_MONA.nama
-  const nipPenilai = atasanUser?.pegawai?.nip || DEFAULT_PENILAI_MONA.nip
-  const pangkatPenilai = 'Setara Penata Muda/ Set. III/a'
-  const jabatanPenilai = atasanUser?.pegawai?.jabatan || DEFAULT_PENILAI_MONA.jabatan
-  const unitPenilai = atasanUser?.pegawai?.unit_es2 || DEFAULT_PENILAI_MONA.unitKerja
+  // Atasan Info (Real Data)
+  const namaPenilai = atasanUser?.pegawai?.nama_lengkap || atasanUser?.email || 'Pejabat Penilai Kinerja'
+  const nipPenilai = atasanUser?.pegawai?.nip || '-'
+  const pangkatPenilai = atasanUser?.pegawai?.pangkat_golongan || '-'
+  const jabatanPenilai = atasanUser?.pegawai?.jabatan || 'Atasan Langsung'
+  const unitPenilai = atasanUser?.pegawai?.unit_es2 || unitPegawai
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in print:p-0 print:bg-white print:static">
@@ -241,30 +234,38 @@ export default function DokumenSKPModal({
 
             <table className="w-full text-left border-collapse">
               <tbody>
-                {displayTasks.map((task, idx) => (
-                  <React.Fragment key={task.id || idx}>
-                    <tr className="border-b border-black">
-                      <td className="w-8 p-1.5 text-center align-top border-r border-black font-bold">
-                        {idx + 1}
-                      </td>
-                      <td className="p-1.5 align-top font-semibold leading-relaxed">
-                        {task.title}
-                      </td>
-                    </tr>
-                    <tr className="border-b border-black">
-                      <td className="p-1.5 border-r border-black bg-neutral-50/50"></td>
-                      <td className="p-1.5 pl-4 align-top space-y-0.5 leading-relaxed bg-neutral-50/30">
-                        <p className="font-bold italic text-[11px]">
-                          Ukuran keberhasilan/ Indikator Kinerja Individu, Target, dan Perspektif :
-                        </p>
-                        <p className="text-[11px] leading-relaxed">
-                          {task.indikatorKinerja ||
-                            `Terprosesnya ${task.title} sebanyak ${task.target || 100} ${task.satuan || '%'} diproses 100%`}
-                        </p>
-                      </td>
-                    </tr>
-                  </React.Fragment>
-                ))}
+                {tasks.length === 0 ? (
+                  <tr>
+                    <td colSpan={2} className="p-4 text-center italic text-neutral-500 text-xs">
+                      Belum ada rencana hasil kerja utama yang disepakati untuk periode ini.
+                    </td>
+                  </tr>
+                ) : (
+                  tasks.map((task, idx) => (
+                    <React.Fragment key={task.id || idx}>
+                      <tr className="border-b border-black">
+                        <td className="w-8 p-1.5 text-center align-top border-r border-black font-bold">
+                          {idx + 1}
+                        </td>
+                        <td className="p-1.5 align-top font-semibold leading-relaxed">
+                          {task.title}
+                        </td>
+                      </tr>
+                      <tr className="border-b border-black">
+                        <td className="p-1.5 border-r border-black bg-neutral-50/50"></td>
+                        <td className="p-1.5 pl-4 align-top space-y-0.5 leading-relaxed bg-neutral-50/30">
+                          <p className="font-bold italic text-[11px]">
+                            Ukuran keberhasilan/ Indikator Kinerja Individu, Target, dan Perspektif :
+                          </p>
+                          <p className="text-[11px] leading-relaxed">
+                            {task.indikatorKinerja ||
+                              `Terprosesnya ${task.title} sebanyak ${task.target || 100} ${task.satuan || '%'} diproses 100%`}
+                          </p>
+                        </td>
+                      </tr>
+                    </React.Fragment>
+                  ))
+                )}
               </tbody>
             </table>
           </div>

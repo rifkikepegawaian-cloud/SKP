@@ -6,13 +6,7 @@ import { useCascading } from '@/context/CascadingContext'
 import { ROLE_LABELS, NilaiPerilakuItem, UserRole } from '@/lib/types'
 import { ASPEK_BERAKHLAK } from '@/lib/constants/perilakuKerja'
 import { createClient } from '@/lib/supabase/client'
-import {
-  ProfileSKP,
-  DEFAULT_PEGAWAI_RIFKI,
-  DEFAULT_PENILAI_MONA,
-  SAMPLE_HASIL_KERJA_UTAMA,
-  SAMPLE_HASIL_KERJA_TAMBAHAN,
-} from '@/lib/constants/skpTemplateRifki'
+import { ProfileSKP } from '@/lib/constants/skpTemplateRifki'
 import Swal from 'sweetalert2'
 
 export default function CetakDokumenSKPPage() {
@@ -24,33 +18,22 @@ export default function CetakDokumenSKPPage() {
     agreedTasksForSKP,
   } = useCascading()
 
-  // Toggle between real database cascading tasks vs authentic UNDIP template (Rencana SKP Rifki)
-  const hasAgreedTasks = agreedTasksForSKP.length > 0
-  const [useSampleData, setUseSampleData] = useState<boolean>(!hasAgreedTasks)
-
-  // Update toggle if agreed tasks become available
-  useEffect(() => {
-    if (agreedTasksForSKP.length > 0) {
-      setUseSampleData(false)
-    }
-  }, [agreedTasksForSKP.length])
-
-  // Identitas Pegawai Yang Dinilai
+  // Identitas Pegawai Yang Dinilai (Data Riil)
   const [pegawaiProfile, setPegawaiProfile] = useState<ProfileSKP>(() => ({
-    nama: user?.pegawai?.nama_lengkap || user?.email || DEFAULT_PEGAWAI_RIFKI.nama,
-    nip: user?.pegawai?.nip || DEFAULT_PEGAWAI_RIFKI.nip,
-    pangkatGol: 'Setara Penata Muda/ Set. III/a',
-    jabatan: user?.pegawai?.jabatan || ROLE_LABELS[role] || DEFAULT_PEGAWAI_RIFKI.jabatan,
-    unitKerja: user?.pegawai?.unit_es2 || DEFAULT_PEGAWAI_RIFKI.unitKerja,
+    nama: user?.pegawai?.nama_lengkap || user?.email || '-',
+    nip: user?.pegawai?.nip || '-',
+    pangkatGol: user?.pegawai?.pangkat_golongan || '-',
+    jabatan: user?.pegawai?.jabatan || (role ? ROLE_LABELS[role] : '-'),
+    unitKerja: user?.pegawai?.unit_es2 || '-',
   }))
 
   // Identitas Pejabat Penilai Kinerja (Atasan Langsung)
   const [penilaiProfile, setPenilaiProfile] = useState<ProfileSKP>(() => ({
-    nama: DEFAULT_PENILAI_MONA.nama,
-    nip: DEFAULT_PENILAI_MONA.nip,
-    pangkatGol: DEFAULT_PENILAI_MONA.pangkatGol,
-    jabatan: DEFAULT_PENILAI_MONA.jabatan,
-    unitKerja: DEFAULT_PENILAI_MONA.unitKerja,
+    nama: 'Pejabat Penilai Kinerja',
+    nip: '-',
+    pangkatGol: '-',
+    jabatan: 'Atasan Langsung',
+    unitKerja: user?.pegawai?.unit_es2 || '-',
   }))
 
   // Modal dialog for editing employee / superior data
@@ -74,11 +57,11 @@ export default function CetakDokumenSKPPage() {
     const firstAssignedByUser = agreedTasksForSKP.find(t => t.assignedByUser)?.assignedByUser
     if (firstAssignedByUser?.pegawai) {
       setPenilaiProfile({
-        nama: firstAssignedByUser.pegawai.nama_lengkap || DEFAULT_PENILAI_MONA.nama,
-        nip: firstAssignedByUser.pegawai.nip || DEFAULT_PENILAI_MONA.nip,
-        pangkatGol: firstAssignedByUser.pegawai.pangkat_golongan || 'Setara Penata Muda/ Set. III/a',
-        jabatan: firstAssignedByUser.pegawai.jabatan || ROLE_LABELS[firstAssignedByUser.role as UserRole] || DEFAULT_PENILAI_MONA.jabatan,
-        unitKerja: firstAssignedByUser.pegawai.unit_es2 || user.pegawai?.unit_es2 || DEFAULT_PENILAI_MONA.unitKerja,
+        nama: firstAssignedByUser.pegawai.nama_lengkap || firstAssignedByUser.email || '-',
+        nip: firstAssignedByUser.pegawai.nip || '-',
+        pangkatGol: firstAssignedByUser.pegawai.pangkat_golongan || '-',
+        jabatan: firstAssignedByUser.pegawai.jabatan || ROLE_LABELS[firstAssignedByUser.role as UserRole] || 'Atasan Langsung',
+        unitKerja: firstAssignedByUser.pegawai.unit_es2 || user.pegawai?.unit_es2 || '-',
       })
       return
     }
@@ -196,23 +179,16 @@ export default function CetakDokumenSKPPage() {
     }
   }, [user, periode?.id])
 
-  // Computed Tasks to display in HASIL KERJA
+  // Computed Tasks to display in HASIL KERJA (Real Data)
   const { tasksUtama, tasksTambahan } = useMemo(() => {
-    if (useSampleData) {
-      return {
-        tasksUtama: SAMPLE_HASIL_KERJA_UTAMA,
-        tasksTambahan: SAMPLE_HASIL_KERJA_TAMBAHAN,
-      }
-    }
-
     const utama = agreedTasksForSKP.filter(t => (t.jenisKinerja || 'utama') === 'utama')
     const tambahan = agreedTasksForSKP.filter(t => t.jenisKinerja === 'tambahan')
 
     return {
-      tasksUtama: utama.length > 0 ? utama : SAMPLE_HASIL_KERJA_UTAMA,
+      tasksUtama: utama,
       tasksTambahan: tambahan,
     }
-  }, [useSampleData, agreedTasksForSKP])
+  }, [agreedTasksForSKP])
 
   const periodeTahun = periode?.tahun || '2025'
   const periodeMulai = periode?.tgl_mulai_cascading || `03 Januari ${periodeTahun}`
@@ -258,23 +234,6 @@ export default function CetakDokumenSKPPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          {/* Data Source Toggle */}
-          <button
-            type="button"
-            onClick={() => setUseSampleData(!useSampleData)}
-            className={`px-3.5 py-2 rounded-2xl text-xs font-bold border transition-colors flex items-center gap-1.5 cursor-pointer ${
-              useSampleData
-                ? 'bg-amber-100 text-amber-900 border-amber-300'
-                : 'bg-surface-container-low text-primary border-outline-variant/30 hover:bg-surface-container'
-            }`}
-            title="Beralih antara template contoh UNDIP (Rencana SKP Rifki) dan tugas cascading riil Anda"
-          >
-            <span className="material-symbols-outlined text-sm">
-              {useSampleData ? 'description' : 'sync_alt'}
-            </span>
-            {useSampleData ? 'Mode: Contoh Dokumen SKP' : 'Mode: Tugas Cascading Riil'}
-          </button>
-
           {/* Edit Profile Button */}
           <button
             type="button"
@@ -297,31 +256,19 @@ export default function CetakDokumenSKPPage() {
         </div>
       </div>
 
-      {/* Info Notice when in sample/cascading mode */}
+      {/* Info Notice */}
       <div className="p-4 rounded-2xl bg-sky-50 border border-sky-200/80 flex items-center justify-between gap-3 print:hidden text-xs">
         <div className="flex items-center gap-2.5 text-sky-950">
           <span className="material-symbols-outlined text-sky-600 text-lg">info</span>
           <div>
             <p className="font-bold">
-              {useSampleData
-                ? 'Menampilkan Format Template Resmi UNDIP (Rencana SKP Rifki Rokhanudin, S.Si.)'
-                : `Menampilkan ${tasksUtama.length} Butir Kinerja dari Penugasan Cascading Aktif Anda`}
+              Menampilkan {tasksUtama.length} Butir Kinerja Riil dari Penugasan Cascading Aktif Anda
             </p>
             <p className="text-[11px] text-sky-800">
-              Hasil kerja memuat IKU untuk Rektor/SUKPA/Unit, Output untuk Manajer, Uraian untuk Supervisor, dan Sub-Uraian untuk Staf dengan ukuran keberhasilan terintegrasi.
+              Hasil kerja memuat data riil (IKU untuk Rektor/SUKPA/Unit, Output untuk Manajer, Uraian untuk Supervisor, dan Sub-Uraian untuk Staf).
             </p>
           </div>
         </div>
-
-        {hasAgreedTasks && useSampleData && (
-          <button
-            type="button"
-            onClick={() => setUseSampleData(false)}
-            className="px-3 py-1.5 rounded-xl bg-sky-600 text-white font-bold text-[11px] shrink-0 hover:bg-sky-700 transition-colors cursor-pointer"
-          >
-            Gunakan Tugas Cascading Saya
-          </button>
-        )}
       </div>
 
       {/* ──────────────────────────────────────────────────────────── */}
@@ -483,37 +430,45 @@ export default function CetakDokumenSKPPage() {
           </div>
 
           {/* List of Tasks Utama */}
-          <table className="w-full text-left border-collapse">
-            <tbody>
-              {tasksUtama.map((task, idx) => (
-                <React.Fragment key={task.id || idx}>
-                  {/* Baris 1: Nomor dan Nama Tugas */}
-                  <tr className="border-b border-black">
-                    <td className="w-8 p-1.5 text-center align-top border-r border-black font-bold">
-                      {idx + 1}
-                    </td>
-                    <td className="p-1.5 align-top font-semibold leading-relaxed">
-                      {task.title}
+            <table className="w-full text-left border-collapse">
+              <tbody>
+                {tasksUtama.length === 0 ? (
+                  <tr>
+                    <td colSpan={2} className="p-4 text-center italic text-neutral-500 text-xs">
+                      Belum ada rencana hasil kerja utama yang disepakati untuk periode ini.
                     </td>
                   </tr>
+                ) : (
+                  tasksUtama.map((task, idx) => (
+                    <React.Fragment key={task.id || idx}>
+                      {/* Baris 1: Nomor dan Nama Tugas */}
+                      <tr className="border-b border-black">
+                        <td className="w-8 p-1.5 text-center align-top border-r border-black font-bold">
+                          {idx + 1}
+                        </td>
+                        <td className="p-1.5 align-top font-semibold leading-relaxed">
+                          {task.title}
+                        </td>
+                      </tr>
 
-                  {/* Baris 2: Indikator Keberhasilan dan Target */}
-                  <tr className="border-b border-black">
-                    <td className="p-1.5 border-r border-black bg-neutral-50/50"></td>
-                    <td className="p-1.5 pl-4 align-top space-y-0.5 leading-relaxed bg-neutral-50/30">
-                      <p className="font-bold italic text-[11px]">
-                        Ukuran keberhasilan/ Indikator Kinerja Individu, Target, dan Perspektif :
-                      </p>
-                      <p className="text-[11px] leading-relaxed">
-                        {task.indikatorKinerja ||
-                          `Terprosesnya ${task.title} sebanyak ${task.target || 100} ${task.satuan || '%'} diproses 100%`}
-                      </p>
-                    </td>
-                  </tr>
-                </React.Fragment>
-              ))}
-            </tbody>
-          </table>
+                      {/* Baris 2: Indikator Keberhasilan dan Target */}
+                      <tr className="border-b border-black">
+                        <td className="p-1.5 border-r border-black bg-neutral-50/50"></td>
+                        <td className="p-1.5 pl-4 align-top space-y-0.5 leading-relaxed bg-neutral-50/30">
+                          <p className="font-bold italic text-[11px]">
+                            Ukuran keberhasilan/ Indikator Kinerja Individu, Target, dan Perspektif :
+                          </p>
+                          <p className="text-[11px] leading-relaxed">
+                            {task.indikatorKinerja ||
+                              `Terprosesnya ${task.title} sebanyak ${task.target || 100} ${task.satuan || '%'} diproses 100%`}
+                          </p>
+                        </td>
+                      </tr>
+                    </React.Fragment>
+                  ))
+                )}
+              </tbody>
+            </table>
 
           {/* Subheader & List: B. TAMBAHAN */}
           {tasksTambahan.length > 0 && (
