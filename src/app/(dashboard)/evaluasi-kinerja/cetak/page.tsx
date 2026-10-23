@@ -788,7 +788,7 @@ export default function CetakDokumenEvaluasiSKPPage() {
           <div className="text-center mb-3">
             <div className="w-20 h-20 mx-auto relative flex items-center justify-center">
               <img
-                src="/images/garuda.png"
+                src="/images/garuda.webp"
                 alt="Lambang Garuda Pancasila"
                 className="w-full h-full object-contain"
               />
