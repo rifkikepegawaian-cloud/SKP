@@ -17,6 +17,7 @@ import {
   ASPEK_BERAKHLAK,
   RATING_PERILAKU_CONFIG,
 } from '@/lib/constants/perilakuKerja'
+import { getStructuralSuperiors, StructuralSuperiors } from '@/lib/skpHierarchy'
 import Swal from 'sweetalert2'
 
 export default function EvaluasiPerilakuKerjaPage() {
@@ -34,8 +35,8 @@ export default function EvaluasiPerilakuKerjaPage() {
   const [selectedSubordinateId, setSelectedSubordinateId] = useState<string>('')
   const [isLoadingSubordinates, setIsLoadingSubordinates] = useState(false)
 
-  // Evaluator Info (Atasan Langsung Penilai)
-  const [penilaiName, setPenilaiName] = useState<string>('Atasan Langsung')
+  // Structural Superiors (Pejabat Penilai & Atasan Pejabat Penilai)
+  const [structuralSuperiors, setStructuralSuperiors] = useState<StructuralSuperiors | null>(null)
 
   // Perilaku data state (keyed by aspek_id: 1..7)
   const [items, setItems] = useState<Record<number, NilaiPerilakuItem>>(() => {
@@ -61,6 +62,17 @@ export default function EvaluasiPerilakuKerjaPage() {
     }
     return user
   }, [activeTab, selectedSubordinateId, subordinates, user])
+
+  // Resolve structural superiors for currentTargetUser
+  useEffect(() => {
+    if (!currentTargetUser) return
+    const supabase = createClient()
+    getStructuralSuperiors(currentTargetUser, supabase).then(res => {
+      setStructuralSuperiors(res)
+    }).catch(err => {
+      console.warn('Gagal memuat atasan struktural di evaluasi perilaku:', err)
+    })
+  }, [currentTargetUser])
 
   // 1. Fetch Subordinates if user is a superior
   useEffect(() => {
@@ -411,13 +423,17 @@ export default function EvaluasiPerilakuKerjaPage() {
             </div>
           </div>
 
-          <div className="p-3 bg-surface-container-low rounded-2xl border border-outline-variant/20 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="p-3 bg-surface-container-low rounded-2xl border border-outline-variant/20 flex flex-wrap items-center justify-between gap-3 text-xs">
             <span className="text-on-surface-variant flex items-center gap-1.5">
               <span className="material-symbols-outlined text-sm text-primary">verified_user</span>
-              Status Penilaian: <strong className="text-on-surface">Dinilai oleh Atasan Langsung</strong>
+              Pejabat Penilai (Atasan Langsung): <strong className="text-on-surface">{structuralSuperiors?.pejabatPenilai.nama || 'Atasan Langsung'}</strong>
+            </span>
+            <span className="text-on-surface-variant flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-sm text-secondary">security</span>
+              Atasan Pejabat Penilai: <strong className="text-on-surface">{structuralSuperiors?.atasanPejabatPenilai.nama || 'Atasan Pejabat Penilai'}</strong>
             </span>
             <span className="text-on-surface-variant">
-              Periode Penilaian: <strong className="text-on-surface">Tahun 2026</strong>
+              Periode: <strong className="text-on-surface">Tahun 2026</strong>
             </span>
           </div>
         </div>

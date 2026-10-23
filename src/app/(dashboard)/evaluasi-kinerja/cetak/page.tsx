@@ -6,6 +6,8 @@ import { useCascading } from '@/context/CascadingContext'
 import { ROLE_LABELS, UserRole } from '@/lib/types'
 import { ASPEK_BERAKHLAK } from '@/lib/constants/perilakuKerja'
 import { ProfileSKP } from '@/lib/constants/skpTemplateRifki'
+import { getStructuralSuperiors } from '@/lib/skpHierarchy'
+import { createClient } from '@/lib/supabase/client'
 import Swal from 'sweetalert2'
 
 export default function CetakDokumenEvaluasiSKPPage() {
@@ -21,7 +23,7 @@ export default function CetakDokumenEvaluasiSKPPage() {
   const [periodeText, setPeriodeText] = useState('1 Januari 2026 s.d. 31 Desember 2026')
   const [tanggalPenetapan, setTanggalPenetapan] = useState('Semarang, 31 Desember 2026')
 
-  // Identitas Pegawai Yang Dinilai (Data Riil)
+  // 1. Identitas Pegawai Yang Dinilai (Data Riil)
   const [pegawaiProfile, setPegawaiProfile] = useState<ProfileSKP>(() => ({
     nama: user?.pegawai?.nama_lengkap || user?.email || '-',
     nip: user?.pegawai?.nip || '-',
@@ -30,7 +32,7 @@ export default function CetakDokumenEvaluasiSKPPage() {
     unitKerja: user?.pegawai?.unit_es2 || '-',
   }))
 
-  // Identitas Pejabat Penilai Kinerja (Atasan Langsung)
+  // 2. Identitas Pejabat Penilai Kinerja (Atasan Langsung)
   const [penilaiProfile, setPenilaiProfile] = useState<ProfileSKP>(() => ({
     nama: 'Pejabat Penilai Kinerja',
     nip: '-',
@@ -39,9 +41,18 @@ export default function CetakDokumenEvaluasiSKPPage() {
     unitKerja: user?.pegawai?.unit_es2 || '-',
   }))
 
+  // 3. Identitas Atasan Pejabat Penilai Kinerja (Atasan dari Atasan Langsung)
+  const [atasanPenilaiProfile, setAtasanPenilaiProfile] = useState<ProfileSKP>(() => ({
+    nama: 'Atasan Pejabat Penilai Kinerja',
+    nip: '-',
+    pangkatGol: '-',
+    jabatan: 'Atasan dari Pejabat Penilai Kinerja',
+    unitKerja: user?.pegawai?.unit_es2 || '-',
+  }))
+
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
 
-  // Auto-detect profile from user and superior
+  // Auto-detect profile from user and structural superiors
   useEffect(() => {
     if (!user) return
 
@@ -54,17 +65,29 @@ export default function CetakDokumenEvaluasiSKPPage() {
       unitKerja: user.pegawai?.unit_es2 || prev.unitKerja,
     }))
 
-    const firstAssignedByUser = agreedTasksForSKP.find(t => t.assignedByUser)?.assignedByUser
-    if (firstAssignedByUser?.pegawai) {
-      setPenilaiProfile({
-        nama: firstAssignedByUser.pegawai.nama_lengkap || firstAssignedByUser.email || '-',
-        nip: firstAssignedByUser.pegawai.nip || '-',
-        pangkatGol: firstAssignedByUser.pegawai.pangkat_golongan || '-',
-        jabatan: firstAssignedByUser.pegawai.jabatan || ROLE_LABELS[firstAssignedByUser.role as UserRole] || 'Atasan Langsung',
-        unitKerja: firstAssignedByUser.pegawai.unit_es2 || user.pegawai?.unit_es2 || '-',
-      })
+    // Cek penyimpanan custom sebelumnya di localStorage
+    const savedProfiles = localStorage.getItem(`skp_profiles_${user.id}`)
+    if (savedProfiles) {
+      try {
+        const parsed = JSON.parse(savedProfiles)
+        if (parsed.pegawai) setPegawaiProfile(parsed.pegawai)
+        if (parsed.penilai) setPenilaiProfile(parsed.penilai)
+        if (parsed.atasanPenilai) setAtasanPenilaiProfile(parsed.atasanPenilai)
+        return
+      } catch (e) {
+        console.error(e)
+      }
     }
-  }, [user, role, agreedTasksForSKP])
+
+    // Resolusi struktural atasan langsung (Pejabat Penilai) & atasan pejabat penilai
+    const supabase = createClient()
+    getStructuralSuperiors(user, supabase).then(res => {
+      setPenilaiProfile(res.pejabatPenilai)
+      setAtasanPenilaiProfile(res.atasanPejabatPenilai)
+    }).catch(err => {
+      console.warn('Gagal mendeteksi atasan struktural:', err)
+    })
+  }, [user, role])
 
   // Saved data from Evaluasi Hasil Kerja and Perilaku
   const [customRealisasiMap, setCustomRealisasiMap] = useState<Record<string, number>>({})
@@ -265,63 +288,92 @@ export default function CetakDokumenEvaluasiSKPPage() {
           </p>
         </div>
 
-        {/* Section 1: Identitas Pegawai & Pejabat Penilai Kinerja */}
-        <div className="mt-6 border border-black">
-          <div className="grid grid-cols-2 text-xs divide-x divide-black">
-            {/* Pegawai Dinilai */}
+        {/* Section 1: Identitas Pegawai, Pejabat Penilai Kinerja & Atasan Pejabat Penilai Kinerja */}
+        <div className="mt-6 border border-black overflow-hidden">
+          <div className="grid grid-cols-1 md:grid-cols-3 text-xs divide-y md:divide-y-0 md:divide-x divide-black">
+            {/* 1. Pegawai Dinilai */}
             <div>
               <div className="bg-neutral-100 p-2 font-bold uppercase border-b border-black text-center">
                 1. PEGAWAI YANG DINILAI
               </div>
               <div className="p-3 space-y-2">
                 <div className="grid grid-cols-3 gap-1">
-                  <span className="text-neutral-600">Nama</span>
+                  <span className="text-neutral-600 font-semibold">Nama</span>
                   <span className="col-span-2 font-bold">: {pegawaiProfile.nama}</span>
                 </div>
                 <div className="grid grid-cols-3 gap-1">
-                  <span className="text-neutral-600">NIP</span>
+                  <span className="text-neutral-600 font-semibold">NIP</span>
                   <span className="col-span-2 font-mono font-medium">: {pegawaiProfile.nip}</span>
                 </div>
                 <div className="grid grid-cols-3 gap-1">
-                  <span className="text-neutral-600">Pangkat / Gol.</span>
+                  <span className="text-neutral-600 font-semibold">Pangkat / Gol.</span>
                   <span className="col-span-2">: {pegawaiProfile.pangkatGol}</span>
                 </div>
                 <div className="grid grid-cols-3 gap-1">
-                  <span className="text-neutral-600">Jabatan</span>
+                  <span className="text-neutral-600 font-semibold">Jabatan</span>
                   <span className="col-span-2">: {pegawaiProfile.jabatan}</span>
                 </div>
                 <div className="grid grid-cols-3 gap-1">
-                  <span className="text-neutral-600">Unit Kerja</span>
+                  <span className="text-neutral-600 font-semibold">Unit Kerja</span>
                   <span className="col-span-2">: {pegawaiProfile.unitKerja}</span>
                 </div>
               </div>
             </div>
 
-            {/* Pejabat Penilai Kinerja */}
+            {/* 2. Pejabat Penilai Kinerja (Atasan Langsung) */}
             <div>
               <div className="bg-neutral-100 p-2 font-bold uppercase border-b border-black text-center">
                 2. PEJABAT PENILAI KINERJA
               </div>
               <div className="p-3 space-y-2">
                 <div className="grid grid-cols-3 gap-1">
-                  <span className="text-neutral-600">Nama</span>
+                  <span className="text-neutral-600 font-semibold">Nama</span>
                   <span className="col-span-2 font-bold">: {penilaiProfile.nama}</span>
                 </div>
                 <div className="grid grid-cols-3 gap-1">
-                  <span className="text-neutral-600">NIP</span>
+                  <span className="text-neutral-600 font-semibold">NIP</span>
                   <span className="col-span-2 font-mono font-medium">: {penilaiProfile.nip}</span>
                 </div>
                 <div className="grid grid-cols-3 gap-1">
-                  <span className="text-neutral-600">Pangkat / Gol.</span>
+                  <span className="text-neutral-600 font-semibold">Pangkat / Gol.</span>
                   <span className="col-span-2">: {penilaiProfile.pangkatGol}</span>
                 </div>
                 <div className="grid grid-cols-3 gap-1">
-                  <span className="text-neutral-600">Jabatan</span>
+                  <span className="text-neutral-600 font-semibold">Jabatan</span>
                   <span className="col-span-2">: {penilaiProfile.jabatan}</span>
                 </div>
                 <div className="grid grid-cols-3 gap-1">
-                  <span className="text-neutral-600">Unit Kerja</span>
+                  <span className="text-neutral-600 font-semibold">Unit Kerja</span>
                   <span className="col-span-2">: {penilaiProfile.unitKerja}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* 3. Atasan Pejabat Penilai Kinerja */}
+            <div>
+              <div className="bg-neutral-100 p-2 font-bold uppercase border-b border-black text-center">
+                3. ATASAN PEJABAT PENILAI
+              </div>
+              <div className="p-3 space-y-2">
+                <div className="grid grid-cols-3 gap-1">
+                  <span className="text-neutral-600 font-semibold">Nama</span>
+                  <span className="col-span-2 font-bold">: {atasanPenilaiProfile.nama}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-1">
+                  <span className="text-neutral-600 font-semibold">NIP</span>
+                  <span className="col-span-2 font-mono font-medium">: {atasanPenilaiProfile.nip}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-1">
+                  <span className="text-neutral-600 font-semibold">Pangkat / Gol.</span>
+                  <span className="col-span-2">: {atasanPenilaiProfile.pangkatGol}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-1">
+                  <span className="text-neutral-600 font-semibold">Jabatan</span>
+                  <span className="col-span-2">: {atasanPenilaiProfile.jabatan}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-1">
+                  <span className="text-neutral-600 font-semibold">Unit Kerja</span>
+                  <span className="col-span-2">: {atasanPenilaiProfile.unitKerja}</span>
                 </div>
               </div>
             </div>
@@ -447,13 +499,13 @@ export default function CetakDokumenEvaluasiSKPPage() {
           </div>
         </div>
 
-        {/* Section 5: Lembar Tanda Tangan Pengesahan */}
+        {/* Section 5: Lembar Tanda Tangan Pengesahan (3 Pihak Sesuai PermenPAN-RB No. 6/2022) */}
         <div className="mt-12 pt-6 page-break-inside-avoid">
           <div className="text-right text-xs mb-8 pr-12 font-medium">
             {tanggalPenetapan}
           </div>
 
-          <div className="grid grid-cols-2 text-xs text-center">
+          <div className="grid grid-cols-2 text-xs text-center gap-y-12">
             {/* Pegawai Dinilai */}
             <div className="space-y-20">
               <p className="font-semibold">Pegawai yang Dinilai,</p>
@@ -471,12 +523,21 @@ export default function CetakDokumenEvaluasiSKPPage() {
                 <p className="font-mono mt-0.5">NIP. {penilaiProfile.nip}</p>
               </div>
             </div>
+
+            {/* Atasan Pejabat Penilai Kinerja (Tengah Bawah) */}
+            <div className="col-span-2 space-y-20 text-center pt-2">
+              <p className="font-semibold">Mengetahui,<br />Atasan Pejabat Penilai Kinerja,</p>
+              <div>
+                <p className="font-extrabold underline text-sm">{atasanPenilaiProfile.nama}</p>
+                <p className="font-mono mt-0.5">NIP. {atasanPenilaiProfile.nip}</p>
+              </div>
+            </div>
           </div>
         </div>
 
       </div>
 
-      {/* ── MODAL: Ubah Identitas Pegawai / Atasan ── */}
+      {/* ── MODAL: Ubah Identitas Pegawai / Atasan / Atasan Pejabat Penilai ── */}
       {isEditModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={() => setIsEditModalOpen(false)}>
           <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full p-6 space-y-5 animate-slide-up max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
@@ -487,7 +548,7 @@ export default function CetakDokumenEvaluasiSKPPage() {
                 </div>
                 <div>
                   <h3 className="font-bold text-sm text-on-surface">Sesuaikan Identitas Dokumen Evaluasi</h3>
-                  <p className="text-[11px] text-on-surface-variant">Ubah identitas pegawai dan pejabat penilai kinerja</p>
+                  <p className="text-[11px] text-on-surface-variant">Ubah identitas pegawai, pejabat penilai kinerja, dan atasan pejabat penilai</p>
                 </div>
               </div>
               <button onClick={() => setIsEditModalOpen(false)} className="text-outline hover:text-on-surface p-1 rounded-lg">
@@ -496,7 +557,7 @@ export default function CetakDokumenEvaluasiSKPPage() {
             </div>
 
             <div className="space-y-5 text-xs">
-              {/* Pegawai Dinilai */}
+              {/* 1. Pegawai Dinilai */}
               <div className="p-4 bg-surface-container-low rounded-2xl space-y-3">
                 <p className="font-bold text-primary uppercase tracking-wider text-[11px]">1. Identitas Pegawai yang Dinilai</p>
                 <div className="grid grid-cols-2 gap-3">
@@ -548,9 +609,9 @@ export default function CetakDokumenEvaluasiSKPPage() {
                 </div>
               </div>
 
-              {/* Pejabat Penilai Kinerja */}
+              {/* 2. Pejabat Penilai Kinerja (Atasan Langsung) */}
               <div className="p-4 bg-surface-container-low rounded-2xl space-y-3">
-                <p className="font-bold text-primary uppercase tracking-wider text-[11px]">2. Identitas Pejabat Penilai Kinerja (Atasan)</p>
+                <p className="font-bold text-primary uppercase tracking-wider text-[11px]">2. Identitas Pejabat Penilai Kinerja (Atasan Langsung)</p>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-outline font-semibold mb-1">Nama Lengkap Atasan</label>
@@ -600,6 +661,58 @@ export default function CetakDokumenEvaluasiSKPPage() {
                 </div>
               </div>
 
+              {/* 3. Atasan Pejabat Penilai Kinerja */}
+              <div className="p-4 bg-surface-container-low rounded-2xl space-y-3">
+                <p className="font-bold text-primary uppercase tracking-wider text-[11px]">3. Identitas Atasan Pejabat Penilai Kinerja</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-outline font-semibold mb-1">Nama Atasan Pejabat Penilai</label>
+                    <input
+                      type="text"
+                      value={atasanPenilaiProfile.nama}
+                      onChange={e => setAtasanPenilaiProfile({ ...atasanPenilaiProfile, nama: e.target.value })}
+                      className="w-full bg-white border border-outline-variant/60 rounded-xl px-3 py-1.5 font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-outline font-semibold mb-1">NIP</label>
+                    <input
+                      type="text"
+                      value={atasanPenilaiProfile.nip}
+                      onChange={e => setAtasanPenilaiProfile({ ...atasanPenilaiProfile, nip: e.target.value })}
+                      className="w-full bg-white border border-outline-variant/60 rounded-xl px-3 py-1.5 font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-outline font-semibold mb-1">Pangkat / Golongan</label>
+                    <input
+                      type="text"
+                      value={atasanPenilaiProfile.pangkatGol}
+                      onChange={e => setAtasanPenilaiProfile({ ...atasanPenilaiProfile, pangkatGol: e.target.value })}
+                      className="w-full bg-white border border-outline-variant/60 rounded-xl px-3 py-1.5"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-outline font-semibold mb-1">Jabatan</label>
+                    <input
+                      type="text"
+                      value={atasanPenilaiProfile.jabatan}
+                      onChange={e => setAtasanPenilaiProfile({ ...atasanPenilaiProfile, jabatan: e.target.value })}
+                      className="w-full bg-white border border-outline-variant/60 rounded-xl px-3 py-1.5"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-outline font-semibold mb-1">Unit Kerja</label>
+                    <input
+                      type="text"
+                      value={atasanPenilaiProfile.unitKerja}
+                      onChange={e => setAtasanPenilaiProfile({ ...atasanPenilaiProfile, unitKerja: e.target.value })}
+                      className="w-full bg-white border border-outline-variant/60 rounded-xl px-3 py-1.5"
+                    />
+                  </div>
+                </div>
+              </div>
+
               {/* Tanggal & Tempat Penetapan */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -625,10 +738,26 @@ export default function CetakDokumenEvaluasiSKPPage() {
 
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-outline-variant/20">
               <button
-                onClick={() => setIsEditModalOpen(false)}
-                className="px-5 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary/90"
+                onClick={() => {
+                  if (user) {
+                    localStorage.setItem(`skp_profiles_${user.id}`, JSON.stringify({
+                      pegawai: pegawaiProfile,
+                      penilai: penilaiProfile,
+                      atasanPenilai: atasanPenilaiProfile,
+                    }))
+                    Swal.fire({
+                      icon: 'success',
+                      title: 'Identitas Disimpan',
+                      text: 'Identitas dokumen evaluasi berhasil diperbarui.',
+                      timer: 1500,
+                      showConfirmButton: false,
+                    })
+                  }
+                  setIsEditModalOpen(false)
+                }}
+                className="px-5 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary/90 cursor-pointer"
               >
-                Tutup & Terapkan
+                Simpan & Terapkan
               </button>
             </div>
           </div>

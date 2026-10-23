@@ -7,6 +7,7 @@ import { ROLE_LABELS, NilaiPerilakuItem, UserRole } from '@/lib/types'
 import { ASPEK_BERAKHLAK } from '@/lib/constants/perilakuKerja'
 import { createClient } from '@/lib/supabase/client'
 import { ProfileSKP } from '@/lib/constants/skpTemplateRifki'
+import { getStructuralSuperiors } from '@/lib/skpHierarchy'
 import Swal from 'sweetalert2'
 
 export default function CetakDokumenSKPPage() {
@@ -18,7 +19,7 @@ export default function CetakDokumenSKPPage() {
     agreedTasksForSKP,
   } = useCascading()
 
-  // Identitas Pegawai Yang Dinilai (Data Riil)
+  // 1. Identitas Pegawai Yang Dinilai (Data Riil)
   const [pegawaiProfile, setPegawaiProfile] = useState<ProfileSKP>(() => ({
     nama: user?.pegawai?.nama_lengkap || user?.email || '-',
     nip: user?.pegawai?.nip || '-',
@@ -27,7 +28,7 @@ export default function CetakDokumenSKPPage() {
     unitKerja: user?.pegawai?.unit_es2 || '-',
   }))
 
-  // Identitas Pejabat Penilai Kinerja (Atasan Langsung)
+  // 2. Identitas Pejabat Penilai Kinerja (Atasan Langsung)
   const [penilaiProfile, setPenilaiProfile] = useState<ProfileSKP>(() => ({
     nama: 'Pejabat Penilai Kinerja',
     nip: '-',
@@ -36,10 +37,19 @@ export default function CetakDokumenSKPPage() {
     unitKerja: user?.pegawai?.unit_es2 || '-',
   }))
 
+  // 3. Identitas Atasan Pejabat Penilai Kinerja (Atasan dari Atasan Langsung)
+  const [atasanPenilaiProfile, setAtasanPenilaiProfile] = useState<ProfileSKP>(() => ({
+    nama: 'Atasan Pejabat Penilai Kinerja',
+    nip: '-',
+    pangkatGol: '-',
+    jabatan: 'Atasan dari Pejabat Penilai Kinerja',
+    unitKerja: user?.pegawai?.unit_es2 || '-',
+  }))
+
   // Modal dialog for editing employee / superior data
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
 
-  // Auto-detect superior from assigned_by_user in agreedTasks or find in same unit
+  // Auto-detect superior based on structural hierarchy
   useEffect(() => {
     if (!user) return
 
@@ -53,58 +63,29 @@ export default function CetakDokumenSKPPage() {
       unitKerja: user.pegawai?.unit_es2 || prev.unitKerja,
     }))
 
-    // 2. Check if any agreed task has an assigned_by_user (direct supervisor)
-    const firstAssignedByUser = agreedTasksForSKP.find(t => t.assignedByUser)?.assignedByUser
-    if (firstAssignedByUser?.pegawai) {
-      setPenilaiProfile({
-        nama: firstAssignedByUser.pegawai.nama_lengkap || firstAssignedByUser.email || '-',
-        nip: firstAssignedByUser.pegawai.nip || '-',
-        pangkatGol: firstAssignedByUser.pegawai.pangkat_golongan || '-',
-        jabatan: firstAssignedByUser.pegawai.jabatan || ROLE_LABELS[firstAssignedByUser.role as UserRole] || 'Atasan Langsung',
-        unitKerja: firstAssignedByUser.pegawai.unit_es2 || user.pegawai?.unit_es2 || '-',
-      })
-      return
-    }
-
-    // 3. Check localStorage for previously saved custom profiles
+    // 2. Check localStorage for previously saved custom profiles
     const savedProfiles = localStorage.getItem(`skp_profiles_${user.id}`)
     if (savedProfiles) {
       try {
         const parsed = JSON.parse(savedProfiles)
         if (parsed.pegawai) setPegawaiProfile(parsed.pegawai)
         if (parsed.penilai) setPenilaiProfile(parsed.penilai)
+        if (parsed.atasanPenilai) setAtasanPenilaiProfile(parsed.atasanPenilai)
+        return
       } catch (e) {
         console.error(e)
       }
-    } else {
-      // Set role-based superior defaults
-      if (role === 'rektor') {
-        setPenilaiProfile({
-          nama: 'Menteri Pendidikan Tinggi, Sains, dan Teknologi',
-          nip: '196109241988031001',
-          pangkatGol: 'Pejabat Negara',
-          jabatan: 'Menteri Pendidikan Tinggi, Sains, dan Teknologi RI',
-          unitKerja: 'Kementerian Pendidikan Tinggi, Sains, dan Teknologi',
-        })
-      } else if (role === 'pimpinan_sukpa') {
-        setPenilaiProfile({
-          nama: 'Prof. Dr. Suharnomo, S.E., M.Si.',
-          nip: '197007221998021001',
-          pangkatGol: 'Pembina Utama / IV/e',
-          jabatan: 'Rektor Universitas Diponegoro',
-          unitKerja: 'Universitas Diponegoro',
-        })
-      } else if (role === 'pimpinan_unit') {
-        setPenilaiProfile({
-          nama: 'Prof. Dr. Ir. Muhammad Zainuri, DEA',
-          nip: '196207131987031003',
-          pangkatGol: 'Pembina Utama Madya / IV/d',
-          jabatan: 'Pimpinan SUKPA / Wakil Rektor',
-          unitKerja: 'Universitas Diponegoro',
-        })
-      }
     }
-  }, [user, role, agreedTasksForSKP])
+
+    // 3. Resolve true structural superiors based on unit es4 / es3 / es2
+    const supabase = createClient()
+    getStructuralSuperiors(user, supabase).then(res => {
+      setPenilaiProfile(res.pejabatPenilai)
+      setAtasanPenilaiProfile(res.atasanPejabatPenilai)
+    }).catch(err => {
+      console.warn('Gagal memuat atasan struktural:', err)
+    })
+  }, [user, role])
 
   // Save customized profiles
   const handleSaveProfiles = (e: React.FormEvent) => {
@@ -113,13 +94,14 @@ export default function CetakDokumenSKPPage() {
       localStorage.setItem(`skp_profiles_${user.id}`, JSON.stringify({
         pegawai: pegawaiProfile,
         penilai: penilaiProfile,
+        atasanPenilai: atasanPenilaiProfile,
       }))
     }
     setIsEditModalOpen(false)
     Swal.fire({
       icon: 'success',
       title: 'Data Profil Tersimpan',
-      text: 'Identitas pegawai dan pejabat penilai kinerja berhasil diperbarui pada dokumen SKP.',
+      text: 'Identitas pegawai, pejabat penilai kinerja, dan atasan pejabat penilai berhasil diperbarui.',
       timer: 1500,
       showConfirmButton: false,
     })
@@ -722,6 +704,63 @@ export default function CetakDokumenSKPPage() {
                       type="text"
                       value={penilaiProfile.unitKerja}
                       onChange={e => setPenilaiProfile({ ...penilaiProfile, unitKerja: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl border border-outline-variant/40 focus:border-primary text-xs"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Kolom Atasan Pejabat Penilai */}
+              <div className="space-y-3">
+                <h4 className="font-bold text-primary uppercase border-b border-outline-variant/40 pb-1 flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-sm">security</span>
+                  III. Atasan Pejabat Penilai Kinerja
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-bold text-on-surface-variant block mb-1">Nama Atasan Pejabat Penilai:</label>
+                    <input
+                      type="text"
+                      value={atasanPenilaiProfile.nama}
+                      onChange={e => setAtasanPenilaiProfile({ ...atasanPenilaiProfile, nama: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl border border-outline-variant/40 focus:border-primary text-xs"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-on-surface-variant block mb-1">NPPU / NIP:</label>
+                    <input
+                      type="text"
+                      value={atasanPenilaiProfile.nip}
+                      onChange={e => setAtasanPenilaiProfile({ ...atasanPenilaiProfile, nip: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl border border-outline-variant/40 focus:border-primary text-xs font-mono"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-on-surface-variant block mb-1">Pangkat / Gol. Ruang:</label>
+                    <input
+                      type="text"
+                      value={atasanPenilaiProfile.pangkatGol}
+                      onChange={e => setAtasanPenilaiProfile({ ...atasanPenilaiProfile, pangkatGol: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl border border-outline-variant/40 focus:border-primary text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-on-surface-variant block mb-1">Jabatan:</label>
+                    <input
+                      type="text"
+                      value={atasanPenilaiProfile.jabatan}
+                      onChange={e => setAtasanPenilaiProfile({ ...atasanPenilaiProfile, jabatan: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl border border-outline-variant/40 focus:border-primary text-xs"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="font-bold text-on-surface-variant block mb-1">Unit Kerja:</label>
+                    <input
+                      type="text"
+                      value={atasanPenilaiProfile.unitKerja}
+                      onChange={e => setAtasanPenilaiProfile({ ...atasanPenilaiProfile, unitKerja: e.target.value })}
                       className="w-full px-3 py-2 rounded-xl border border-outline-variant/40 focus:border-primary text-xs"
                     />
                   </div>

@@ -1,10 +1,12 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { User, ROLE_LABELS, MasterPeriodeSKP } from '@/lib/types'
 import { ASPEK_BERAKHLAK } from '@/lib/constants/perilakuKerja'
-// Dokumen SKP Modal without mock Rifki fallbacks
+import { getStructuralSuperiors, StructuralSuperiors } from '@/lib/skpHierarchy'
+import { createClient } from '@/lib/supabase/client'
 
+// Dokumen SKP Modal without mock Rifki fallbacks
 interface DokumenSKPModalProps {
   isOpen: boolean
   onClose: () => void
@@ -30,6 +32,18 @@ export default function DokumenSKPModal({
   atasanUser,
   tasks,
 }: DokumenSKPModalProps) {
+  const [structuralSuperiors, setStructuralSuperiors] = useState<StructuralSuperiors | null>(null)
+
+  useEffect(() => {
+    if (!pegawaiUser) return
+    const supabase = createClient()
+    getStructuralSuperiors(pegawaiUser, supabase).then(res => {
+      setStructuralSuperiors(res)
+    }).catch(err => {
+      console.warn('Gagal memuat atasan struktural:', err)
+    })
+  }, [pegawaiUser])
+
   if (!isOpen) return null
 
   const handlePrint = () => {
@@ -47,12 +61,12 @@ export default function DokumenSKPModal({
   const jabatanPegawai = pegawaiUser?.pegawai?.jabatan || (pegawaiUser?.role ? (ROLE_LABELS as Record<string, string>)[pegawaiUser.role.split(',')[0]] : '-') || '-'
   const unitPegawai = pegawaiUser?.pegawai?.unit_es2 || '-'
 
-  // Atasan Info (Real Data)
-  const namaPenilai = atasanUser?.pegawai?.nama_lengkap || atasanUser?.email || 'Pejabat Penilai Kinerja'
-  const nipPenilai = atasanUser?.pegawai?.nip || '-'
-  const pangkatPenilai = atasanUser?.pegawai?.pangkat_golongan || '-'
-  const jabatanPenilai = atasanUser?.pegawai?.jabatan || 'Atasan Langsung'
-  const unitPenilai = atasanUser?.pegawai?.unit_es2 || unitPegawai
+  // Pejabat Penilai Kinerja Info (Atasan Langsung Struktural)
+  const namaPenilai = structuralSuperiors?.pejabatPenilai.nama || atasanUser?.pegawai?.nama_lengkap || atasanUser?.email || 'Pejabat Penilai Kinerja'
+  const nipPenilai = structuralSuperiors?.pejabatPenilai.nip || atasanUser?.pegawai?.nip || '-'
+  const pangkatPenilai = structuralSuperiors?.pejabatPenilai.pangkatGol || atasanUser?.pegawai?.pangkat_golongan || '-'
+  const jabatanPenilai = structuralSuperiors?.pejabatPenilai.jabatan || atasanUser?.pegawai?.jabatan || 'Atasan Langsung'
+  const unitPenilai = structuralSuperiors?.pejabatPenilai.unitKerja || atasanUser?.pegawai?.unit_es2 || unitPegawai
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in print:p-0 print:bg-white print:static">
