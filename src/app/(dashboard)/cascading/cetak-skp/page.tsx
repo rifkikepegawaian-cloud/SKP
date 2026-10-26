@@ -172,8 +172,8 @@ export default function CetakDokumenSKPPage() {
     }
   }, [agreedTasksForSKP])
 
-  const periodeTahun = periode?.tahun || '2025'
-  const periodeMulai = periode?.tgl_mulai_cascading || `03 Januari ${periodeTahun}`
+  const periodeTahun = periode?.tahun || new Date().getFullYear().toString()
+  const periodeMulai = periode?.tgl_mulai_cascading || `01 Januari ${periodeTahun}`
   const periodeAkhir = periode?.tgl_akhir_cascading || `31 Desember ${periodeTahun}`
 
   // Approach label based on role

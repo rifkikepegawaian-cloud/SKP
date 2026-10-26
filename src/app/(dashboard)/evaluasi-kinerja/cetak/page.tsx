@@ -27,12 +27,23 @@ export default function CetakDokumenEvaluasiSKPPage() {
   // Capaian Kinerja Organisasi (Default: ISTIMEWA - sesuaian PermenPAN-RB No. 6/2022)
   const [capaianOrganisasi, setCapaianOrganisasi] = useState<CapaianOrganisasiType>('ISTIMEWA')
 
-  // Metadata Dokumen & Periode
+  // Tahun Berjalan / Periode Aktif (e.g. 2026)
+  const periodeTahun = useMemo(() => {
+    return periode?.tahun || new Date().getFullYear().toString()
+  }, [periode])
+
+  // Metadata Dokumen & Periode (Dinamis Berdasarkan Tahun Berjalan / Periode Aktif)
   const [instansiText, setInstansiText] = useState('UNIVERSITAS DIPONEGORO')
   const [kementerianText, setKementerianText] = useState('KEMENTERIAN PENDIDIKAN TINGGI, SAINS, DAN TEKNOLOGI')
   const [periodeEvaluasiLabel, setPeriodeEvaluasiLabel] = useState('PERIODE: TRIWULAN I/II/III/IV-AKHIR*')
-  const [periodePenilaianText, setPeriodePenilaianText] = useState('03 JANUARI S.D. 31 DESEMBER TAHUN 2025')
-  const [tanggalPenetapan, setTanggalPenetapan] = useState('Semarang, 31 Desember 2025')
+  const [periodePenilaianText, setPeriodePenilaianText] = useState(() => {
+    const yr = new Date().getFullYear().toString()
+    return `01 JANUARI S.D. 31 DESEMBER TAHUN ${yr}`
+  })
+  const [tanggalPenetapan, setTanggalPenetapan] = useState(() => {
+    const yr = new Date().getFullYear().toString()
+    return `Semarang, 31 Desember ${yr}`
+  })
   const [catatanRekomendasi, setCatatanRekomendasi] = useState('')
 
   // 1. Identitas Pegawai Yang Dinilai
@@ -100,8 +111,8 @@ export default function CetakDokumenEvaluasiSKPPage() {
     }
 
     // Cek metadata dokumen evaluasi
-    const periodeId = periode?.id || '2025'
-    const savedMeta = localStorage.getItem(`skp_evaluasi_meta_${user.id}_${periodeId}`)
+    const activePeriodeId = periode?.id || periodeTahun
+    const savedMeta = localStorage.getItem(`skp_evaluasi_meta_${user.id}_${activePeriodeId}`)
     if (savedMeta) {
       try {
         const meta = JSON.parse(savedMeta)
@@ -109,14 +120,29 @@ export default function CetakDokumenEvaluasiSKPPage() {
         if (meta.instansiText) setInstansiText(meta.instansiText)
         if (meta.kementerianText) setKementerianText(meta.kementerianText)
         if (meta.periodeEvaluasiLabel) setPeriodeEvaluasiLabel(meta.periodeEvaluasiLabel)
-        if (meta.periodePenilaianText) setPeriodePenilaianText(meta.periodePenilaianText)
-        if (meta.tanggalPenetapan) setTanggalPenetapan(meta.tanggalPenetapan)
+        
+        // Bersihkan hardcode 2025 versi terdahulu jika berbeda dengan tahun berjalan
+        if (meta.periodePenilaianText && !meta.periodePenilaianText.includes('2025')) {
+          setPeriodePenilaianText(meta.periodePenilaianText)
+        } else {
+          setPeriodePenilaianText(`01 JANUARI S.D. 31 DESEMBER TAHUN ${periodeTahun}`)
+        }
+
+        if (meta.tanggalPenetapan && !meta.tanggalPenetapan.includes('2025')) {
+          setTanggalPenetapan(meta.tanggalPenetapan)
+        } else {
+          setTanggalPenetapan(`Semarang, 31 Desember ${periodeTahun}`)
+        }
+
         if (meta.catatanRekomendasi !== undefined) setCatatanRekomendasi(meta.catatanRekomendasi)
       } catch (e) {
         console.warn(e)
       }
+    } else {
+      setPeriodePenilaianText(`01 JANUARI S.D. 31 DESEMBER TAHUN ${periodeTahun}`)
+      setTanggalPenetapan(`Semarang, 31 Desember ${periodeTahun}`)
     }
-  }, [user, role, periode])
+  }, [user, role, periode, periodeTahun])
 
   // Saved data from Evaluasi Hasil Kerja and Perilaku
   const [customRealisasiMap, setCustomRealisasiMap] = useState<Record<string, number>>({})
@@ -126,16 +152,16 @@ export default function CetakDokumenEvaluasiSKPPage() {
 
   useEffect(() => {
     if (!user) return
-    const periodeId = periode?.id || '2025'
+    const activePeriodeId = periode?.id || periodeTahun
     try {
-      const hkSaved = localStorage.getItem(`evaluasi_hasil_kerja_${user.id}_${periodeId}`)
+      const hkSaved = localStorage.getItem(`evaluasi_hasil_kerja_${user.id}_${activePeriodeId}`)
       if (hkSaved) {
         const parsed = JSON.parse(hkSaved)
         if (parsed.realisasi) setCustomRealisasiMap(parsed.realisasi)
         if (parsed.feedback) setFeedbackMap(parsed.feedback)
         if (parsed.realisasiText) setNarrativeRealisasiMap(parsed.realisasiText)
       }
-      const pkSaved = localStorage.getItem(`evaluasi_perilaku_${user.id}_${periodeId}`)
+      const pkSaved = localStorage.getItem(`evaluasi_perilaku_${user.id}_${activePeriodeId}`)
       if (pkSaved) {
         const parsedPk = JSON.parse(pkSaved)
         setPerilakuMap(parsedPk)
@@ -143,7 +169,7 @@ export default function CetakDokumenEvaluasiSKPPage() {
     } catch (e) {
       console.warn('Error reading saved evaluasi from localStorage', e)
     }
-  }, [user, periode])
+  }, [user, periode, periodeTahun])
 
   // Evaluasi Hasil Kerja Items (Calculates Nilai Angka: 3 = Diatas, 2 = Sesuai, 1 = Dibawah)
   const hasilKerjaList = useMemo(() => {
@@ -280,13 +306,13 @@ export default function CetakDokumenEvaluasiSKPPage() {
   // Save Meta to localStorage
   const handleSaveMeta = () => {
     if (!user) return
-    const periodeId = periode?.id || '2025'
+    const activePeriodeId = periode?.id || periodeTahun
     localStorage.setItem(`skp_profiles_${user.id}`, JSON.stringify({
       pegawai: pegawaiProfile,
       penilai: penilaiProfile,
       atasanPenilai: atasanPenilaiProfile,
     }))
-    localStorage.setItem(`skp_evaluasi_meta_${user.id}_${periodeId}`, JSON.stringify({
+    localStorage.setItem(`skp_evaluasi_meta_${user.id}_${activePeriodeId}`, JSON.stringify({
       capaianOrganisasi,
       instansiText,
       kementerianText,
@@ -428,15 +454,15 @@ export default function CetakDokumenEvaluasiSKPPage() {
             </h3>
           </div>
 
-          {/* Meta Sub-header: 3 Kolom */}
-          <div className="grid grid-cols-3 text-[11px] font-bold py-1.5 border-b border-black">
-            <div className="text-left uppercase">
+          {/* Meta Sub-header: 3 Kolom Responsif & Tanpa Pecah Baris */}
+          <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 text-[10.5px] font-bold py-1.5 border-b border-black">
+            <div className="text-left uppercase shrink-0">
               {instansiText}
             </div>
-            <div className="text-center uppercase">
+            <div className="text-center uppercase shrink-0">
               {periodeEvaluasiLabel}
             </div>
-            <div className="text-right uppercase">
+            <div className="text-right uppercase whitespace-nowrap">
               PERIODE PENILAIAN: {periodePenilaianText}
             </div>
           </div>
