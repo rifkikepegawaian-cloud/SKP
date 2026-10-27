@@ -21,6 +21,7 @@ import {
 import TargetSplitterModal, { AllocationRow } from '@/components/cascading/TargetSplitterModal'
 import SanggahanModal from '@/components/cascading/SanggahanModal'
 import PelaporanCapaianModal from '@/components/cascading/PelaporanCapaianModal'
+import Swal from 'sweetalert2'
 
 export interface GroupedIKU {
   id: string
@@ -351,6 +352,14 @@ export function CascadingProvider({ children }: { children: React.ReactNode }) {
       return uraianAssignments.filter(a => a.assigned_by === uid).map(a => ({ ...a, _table: 'cascading_uraian_spv' }))
     } else if (role === 'supervisor') {
       return subUraianAssignments.filter(a => a.assigned_by === uid).map(a => ({ ...a, _table: 'cascading_sub_uraian_staff' }))
+    } else if (role === 'admin') {
+      return [
+        ...sukpaAssignments.map(a => ({ ...a, _table: 'cascading_iku_sukpa' })),
+        ...unitAssignments.filter(a => a.assigned_by === uid).map(a => ({ ...a, _table: 'cascading_iku_unit' })),
+        ...outputAssignments.filter(a => a.assigned_by === uid).map(a => ({ ...a, _table: 'cascading_output_manajer' })),
+        ...uraianAssignments.filter(a => a.assigned_by === uid).map(a => ({ ...a, _table: 'cascading_uraian_spv' })),
+        ...subUraianAssignments.filter(a => a.assigned_by === uid).map(a => ({ ...a, _table: 'cascading_sub_uraian_staff' })),
+      ]
     }
     return []
   }, [user, role, sukpaAssignments, unitAssignments, outputAssignments, uraianAssignments, subUraianAssignments])
@@ -796,21 +805,72 @@ export function CascadingProvider({ children }: { children: React.ReactNode }) {
   }
 
   const handleDeleteAssignment = async (task: any) => {
-    if (!task._table) return
-    if (!confirm('Apakah Anda yakin ingin membatalkan/menghapus alokasi penugasan ini?')) return
-    const supabase = createClient()
-    try {
-      const { error } = await supabase
-        .from(task._table)
-        .delete()
-        .eq('id', task.id)
+    let tableName = task._table
+    if (!tableName) {
+      if (task.sukpa_user_id) tableName = 'cascading_iku_sukpa'
+      else if (task.unit_user_id) tableName = 'cascading_iku_unit'
+      else if (task.manajer_user_id) tableName = 'cascading_output_manajer'
+      else if (task.spv_user_id) tableName = 'cascading_uraian_spv'
+      else if (task.staff_user_id) tableName = 'cascading_sub_uraian_staff'
+    }
 
-      if (error) throw error
-      showToast('Penugasan berhasil dibatalkan.')
-      fetchData()
+    if (!tableName || !task.id) {
+      Swal.fire('Error', 'Informasi penugasan tidak valid.', 'error')
+      return
+    }
+
+    const taskTitle = task.nama_sub_uraian || task.nama_uraian || task.nama_output || task.iku?.nama_iku || 'penugasan ini'
+
+    const result = await Swal.fire({
+      title: 'Batalkan Penugasan?',
+      html: `Apakah Anda yakin ingin membatalkan dan menghapus penugasan <b>${taskTitle}</b>?<br/><span class="text-xs text-slate-500">Target yang telah dibagikan ke bawahan akan ditarik kembali.</span>`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#717786',
+      confirmButtonText: 'Ya, Hapus Penugasan',
+      cancelButtonText: 'Batal'
+    })
+
+    if (!result.isConfirmed) return
+
+    try {
+      Swal.fire({
+        title: 'Menghapus...',
+        text: 'Sedang membatalkan alokasi penugasan...',
+        allowOutsideClick: false,
+        didOpen: () => {
+          Swal.showLoading()
+        }
+      })
+
+      const res = await fetch('/api/cascading/delete-assignment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          table: tableName,
+          id: task.id,
+        }),
+      })
+
+      const json = await res.json()
+
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || 'Gagal membatalkan penugasan.')
+      }
+
+      await Swal.fire({
+        icon: 'success',
+        title: 'Berhasil Dihapus',
+        text: 'Alokasi penugasan berhasil dibatalkan dan dihapus.',
+        timer: 1500,
+        showConfirmButton: false,
+      })
+
+      await fetchData()
     } catch (err: any) {
       console.error('Error deleting assignment:', err)
-      showToast('Gagal membatalkan penugasan.', 'error')
+      Swal.fire('Gagal', err.message || 'Gagal membatalkan penugasan.', 'error')
     }
   }
 
