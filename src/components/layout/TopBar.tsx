@@ -160,7 +160,13 @@ export default function TopBar({ title = 'SKP Universitas Diponegoro', user, sea
                         onClick={() => { 
                           setActiveRole(r as any); 
                           setIsDropdownOpen(false);
-                          window.location.href = '/dashboard';
+                          if (r === 'admin') {
+                            window.location.href = '/admin/manajemen-iku';
+                          } else if (['rektor', 'pimpinan_sukpa', 'pimpinan_unit'].includes(r)) {
+                            window.location.href = '/monitoring';
+                          } else {
+                            window.location.href = '/dashboard';
+                          }
                         }}
                         className={`w-full text-left px-3 py-2 rounded-xl text-[13px] font-medium transition-colors flex items-center justify-between ${
                           activeRole === r ? 'bg-primary/10 text-primary' : 'text-on-surface hover:bg-surface-container'

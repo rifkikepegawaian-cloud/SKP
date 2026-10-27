@@ -58,10 +58,11 @@ export default function LoginPage() {
       return
     }
 
-    // Redirect based on role
-    if (profile.role.includes('admin')) {
+    // Redirect based on activeRole (resolved during fetchProfile)
+    const activeRole = useAuthStore.getState().activeRole
+    if (activeRole === 'admin') {
       router.push('/admin/manajemen-iku')
-    } else if (['rektor', 'pimpinan_sukpa', 'pimpinan_unit'].some(r => profile.role.includes(r))) {
+    } else if (['rektor', 'pimpinan_sukpa', 'pimpinan_unit'].some(r => activeRole === r)) {
       router.push('/monitoring')
     } else {
       router.push('/dashboard')

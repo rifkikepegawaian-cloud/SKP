@@ -39,7 +39,7 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // If logged in and trying to access login page, redirect to dashboard
+  // If logged in and trying to access login page, redirect to appropriate home
   if (user && request.nextUrl.pathname === '/') {
     // Fetch user role from users table
     const { data: profile } = await supabase
@@ -48,9 +48,17 @@ export async function updateSession(request: NextRequest) {
       .eq('id', user.id)
       .single()
 
+    const activeRoleCookie = request.cookies.get('activeRole')?.value
+    let targetRole = activeRoleCookie
+    if (!targetRole || !profile?.role?.includes(targetRole)) {
+      targetRole = profile?.role?.includes('staff') ? 'staff' : profile?.role?.split(',')[0]?.trim()
+    }
+
     const url = request.nextUrl.clone()
-    if (profile?.role?.includes('admin')) {
+    if (targetRole === 'admin') {
       url.pathname = '/admin/manajemen-iku'
+    } else if (['rektor', 'pimpinan_sukpa', 'pimpinan_unit'].includes(targetRole || '')) {
+      url.pathname = '/monitoring'
     } else {
       url.pathname = '/dashboard'
     }
@@ -65,7 +73,11 @@ export async function updateSession(request: NextRequest) {
       .eq('id', user.id)
       .single()
 
-    if (!profile?.role?.includes('admin')) {
+    const activeRoleCookie = request.cookies.get('activeRole')?.value
+    const hasAdminInRoles = profile?.role?.includes('admin')
+
+    // Disallow if user has no admin role at all or currently active role is explicitly not admin
+    if (!hasAdminInRoles || (activeRoleCookie && activeRoleCookie !== 'admin')) {
       const url = request.nextUrl.clone()
       url.pathname = '/dashboard'
       return NextResponse.redirect(url)

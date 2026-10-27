@@ -21,6 +21,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   setActiveRole: (role) => {
     if (typeof window !== 'undefined') {
       localStorage.setItem('activeRole', role)
+      document.cookie = `activeRole=${role}; path=/; max-age=2592000; SameSite=Lax`
     }
     set({ activeRole: role })
   },
@@ -42,7 +43,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       .single()
 
     if (profile) {
-      const roles = (profile.role || '').split(',') as UserRole[]
+      const roles = (profile.role || '').split(',').map((r: string) => r.trim()) as UserRole[]
       
       let defaultRole: UserRole = roles[0]
       if (typeof window !== 'undefined') {
@@ -52,6 +53,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         } else if (roles.includes('staff')) {
           defaultRole = 'staff'
         }
+        document.cookie = `activeRole=${defaultRole}; path=/; max-age=2592000; SameSite=Lax`
       } else if (roles.includes('staff')) {
         defaultRole = 'staff'
       }
@@ -69,7 +71,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     await supabase.auth.signOut()
     if (typeof window !== 'undefined') {
       localStorage.removeItem('activeRole')
+      document.cookie = 'activeRole=; path=/; max-age=0; SameSite=Lax'
     }
-    set({ user: null, isLoading: false })
+    set({ user: null, activeRole: null, isLoading: false })
   },
 }))
