@@ -18,6 +18,7 @@ import {
   CascadingSubUraianStaff,
   CascadingLaporanKerja,
 } from '@/lib/types'
+import { getStructuralSubordinates } from '@/lib/skpHierarchy'
 import TargetSplitterModal, { AllocationRow } from '@/components/cascading/TargetSplitterModal'
 import SanggahanModal from '@/components/cascading/SanggahanModal'
 import PelaporanCapaianModal from '@/components/cascading/PelaporanCapaianModal'
@@ -200,13 +201,18 @@ export function CascadingProvider({ children }: { children: React.ReactNode }) {
       if (ikuData) setMasterIkuList(ikuData as MasterIKU[])
 
       if (subordinateRoleTarget) {
-        const { data: subUsers } = await supabase
-          .from('users')
-          .select('*, pegawai(*)')
-          .ilike('role', `%${subordinateRoleTarget}%`)
-          .order('email', { ascending: true })
+        const structural = await getStructuralSubordinates(user, role, supabase)
+        if (structural && structural.length > 0) {
+          setSubordinates(structural)
+        } else {
+          const { data: subUsers } = await supabase
+            .from('users')
+            .select('*, pegawai(*)')
+            .ilike('role', `%${subordinateRoleTarget}%`)
+            .order('email', { ascending: true })
 
-        setSubordinates((subUsers as User[]) || [])
+          setSubordinates((subUsers as User[]) || [])
+        }
       } else {
         setSubordinates([])
       }
@@ -244,7 +250,7 @@ export function CascadingProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     fetchData()
-  }, [role, subordinateRoleTarget])
+  }, [user, role, subordinateRoleTarget])
 
   // Grouped 32 IKU by unique kode_iku
   const groupedIkuList = useMemo(() => {

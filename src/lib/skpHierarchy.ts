@@ -340,3 +340,110 @@ export async function getStructuralSuperiors(
     atasanPejabatPenilaiUser: manajerUser,
   }
 }
+
+/**
+ * Mendapatkan daftar bawahan struktural langsung (direct subordinates)
+ * berdasarkan struktur unit organisasi pejabat (ES IV -> Staff, ES III -> SPV, ES II -> Manajer, SUKPA -> Pimpinan Unit, Rektor -> Pimpinan SUKPA)
+ */
+export async function getStructuralSubordinates(
+  user: User | null | undefined,
+  role: UserRole,
+  supabase: any
+): Promise<User[]> {
+  if (!user) return []
+
+  const unitEs2 = (user.led_unit_es2 || user.pegawai?.unit_es2 || '').trim()
+  const unitEs3 = (user.led_unit_es3 || user.pegawai?.unit_es3 || '').trim()
+  const unitEs4 = (user.pegawai?.unit_es4 || '').trim()
+
+  const clean = (str: string) => (str || '').toLowerCase().replace(/^(subbagian|bagian|departemen|fakultas|direktorat|biro|unit)\s+/i, '').trim()
+
+  try {
+    // 1. SUPERVISOR (Eselon IV) -> Bawahan langsung adalah seluruh Staf di unit_es4 yang sama
+    if (role === 'supervisor') {
+      let query = supabase
+        .from('users')
+        .select('*, pegawai!inner(*)')
+        .ilike('role', '%staff%')
+
+      if (unitEs4) {
+        query = query.ilike('pegawai.unit_es4', `%${clean(unitEs4)}%`)
+      } else if (unitEs3) {
+        query = query.ilike('pegawai.unit_es3', `%${clean(unitEs3)}%`)
+      } else if (unitEs2) {
+        query = query.ilike('pegawai.unit_es2', `%${clean(unitEs2)}%`)
+      }
+
+      const { data } = await query.order('email', { ascending: true })
+      return ((data as User[]) || []).filter(u => u.id !== user.id)
+    }
+
+    // 2. MANAJER (Eselon III) -> Bawahan langsung adalah seluruh Supervisor di unit_es3 yang sama
+    if (role === 'manajer') {
+      let query = supabase
+        .from('users')
+        .select('*, pegawai!inner(*)')
+        .ilike('role', '%supervisor%')
+
+      if (unitEs3) {
+        query = query.ilike('pegawai.unit_es3', `%${clean(unitEs3)}%`)
+      } else if (unitEs2) {
+        query = query.ilike('pegawai.unit_es2', `%${clean(unitEs2)}%`)
+      }
+
+      const { data } = await query.order('email', { ascending: true })
+      return ((data as User[]) || []).filter(u => u.id !== user.id)
+    }
+
+    // 3. PIMPINAN UNIT / WAKIL PIMPINAN UNIT (Eselon II) -> Bawahan langsung adalah seluruh Manajer di unit_es2
+    if (role === 'pimpinan_unit' || role === 'wakil_pimpinan_unit') {
+      let query = supabase
+        .from('users')
+        .select('*, pegawai!inner(*)')
+        .ilike('role', '%manajer%')
+
+      if (unitEs2) {
+        query = query.ilike('pegawai.unit_es2', `%${clean(unitEs2)}%`)
+      }
+
+      const { data } = await query.order('email', { ascending: true })
+      return ((data as User[]) || []).filter(u => u.id !== user.id)
+    }
+
+    // 4. PIMPINAN SUKPA -> Bawahan langsung adalah Pimpinan Unit
+    if (role === 'pimpinan_sukpa') {
+      const { data } = await supabase
+        .from('users')
+        .select('*, pegawai(*)')
+        .ilike('role', '%pimpinan_unit%')
+        .order('email', { ascending: true })
+      return ((data as User[]) || []).filter(u => u.id !== user.id)
+    }
+
+    // 5. REKTOR -> Bawahan langsung adalah Pimpinan SUKPA
+    if (role === 'rektor') {
+      const { data } = await supabase
+        .from('users')
+        .select('*, pegawai(*)')
+        .ilike('role', '%pimpinan_sukpa%')
+        .order('email', { ascending: true })
+      return ((data as User[]) || []).filter(u => u.id !== user.id)
+    }
+
+    // 6. ADMIN -> Menampilkan pimpinan sukpa atau opsi lengkap
+    if (role === 'admin') {
+      const { data } = await supabase
+        .from('users')
+        .select('*, pegawai(*)')
+        .neq('id', user.id)
+        .order('email', { ascending: true })
+        .limit(100)
+      return (data as User[]) || []
+    }
+  } catch (err) {
+    console.error('Error fetching structural subordinates:', err)
+  }
+
+  return []
+}
+

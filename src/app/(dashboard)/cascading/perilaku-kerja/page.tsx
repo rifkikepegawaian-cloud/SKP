@@ -17,6 +17,7 @@ import {
   ASPEK_BERAKHLAK,
   RATING_PERILAKU_CONFIG,
 } from '@/lib/constants/perilakuKerja'
+import { getStructuralSubordinates } from '@/lib/skpHierarchy'
 import Swal from 'sweetalert2'
 
 export default function PerilakuKerjaPage() {
@@ -68,52 +69,12 @@ export default function PerilakuKerjaPage() {
       setIsLoadingSubordinates(true)
       const supabase = createClient()
       try {
-        let subs: User[] = []
-        if (role === 'rektor' || role === 'admin') {
-          const { data } = await supabase
-            .from('users')
-            .select('*, pegawai(*)')
-            .ilike('role', '%pimpinan_sukpa%')
-          subs = (data as User[]) || []
-        } else if (role === 'pimpinan_sukpa') {
-          const { data } = await supabase
-            .from('users')
-            .select('*, pegawai(*)')
-            .ilike('role', '%pimpinan_unit%')
-          subs = (data as User[]) || []
-        } else if (role === 'pimpinan_unit') {
-          const { data } = await supabase
-            .from('users')
-            .select('*, pegawai(*)')
-            .ilike('role', '%manajer%')
-          subs = (data as User[]) || []
-        } else if (role === 'manajer') {
-          const { data } = await supabase
-            .from('users')
-            .select('*, pegawai(*)')
-            .ilike('role', '%supervisor%')
-          subs = (data as User[]) || []
-        } else if (role === 'supervisor') {
-          const { data } = await supabase
-            .from('users')
-            .select('*, pegawai(*)')
-            .ilike('role', '%staff%')
-          subs = (data as User[]) || []
-        }
-
-        // If no direct cascading subs found, fallback to all users in unit or mock subordinates
-        if (subs.length === 0) {
-          const { data } = await supabase
-            .from('users')
-            .select('*, pegawai(*)')
-            .neq('id', user.id)
-            .limit(10)
-          subs = (data as User[]) || []
-        }
-
+        const subs = await getStructuralSubordinates(user, role, supabase)
         setSubordinates(subs)
         if (subs.length > 0) {
-          setSelectedSubordinateId(subs[0].id)
+          if (!selectedSubordinateId || !subs.some(s => s.id === selectedSubordinateId)) {
+            setSelectedSubordinateId(subs[0].id)
+          }
         }
       } catch (err) {
         console.error('Error fetching subordinates:', err)

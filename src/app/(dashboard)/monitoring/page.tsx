@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuthStore } from '@/store/authStore'
 import { User, UserRole, ROLE_LABELS, MasterPeriodeSKP } from '@/lib/types'
+import { getStructuralSubordinates } from '@/lib/skpHierarchy'
 import * as XLSX from 'xlsx'
 
 interface SubordinatePerformance {
@@ -59,7 +60,11 @@ export default function MonitoringPage() {
         setPeriode(periodeData as MasterPeriodeSKP)
       }
 
-      // 2. Fetch assignments & subordinates based on viewer's role
+      // 2. Fetch structural subordinates based on role and unit
+      const structuralSubs = await getStructuralSubordinates(user, role, supabase)
+      const subIds = structuralSubs.map(s => s.id)
+
+      // 3. Fetch assignments & tasks
       let rawTasks: any[] = []
       let tableName = ''
 
@@ -71,20 +76,23 @@ export default function MonitoringPage() {
         rawTasks = data || []
       } else if (role === 'pimpinan_sukpa') {
         tableName = 'cascading_iku_unit'
-        const { data } = await supabase
+        let query = supabase
           .from('cascading_iku_unit')
           .select('*, subordinate:users!unit_user_id(*, pegawai(*)), parent_sukpa:cascading_iku_sukpa(*, iku:master_iku(*))')
-          .eq('assigned_by', user.id)
+        if (subIds.length > 0) {
+          query = query.or(`assigned_by.eq.${user.id},unit_user_id.in.(${subIds.join(',')})`)
+        } else {
+          query = query.eq('assigned_by', user.id)
+        }
+        const { data } = await query
         rawTasks = data || []
       } else if (role === 'pimpinan_unit' || role === 'wakil_pimpinan_unit') {
         tableName = 'cascading_output_manajer'
-        const unitEs2 = user.led_unit_es2 || user.pegawai?.unit_es2
         let query = supabase
           .from('cascading_output_manajer')
           .select('*, subordinate:users!manajer_user_id(*, pegawai(*)), parent_unit:cascading_iku_unit(*)')
-
-        if (unitEs2) {
-          query = query.or(`assigned_by.eq.${user.id},subordinate.pegawai.unit_es2.eq.${unitEs2}`)
+        if (subIds.length > 0) {
+          query = query.or(`assigned_by.eq.${user.id},manajer_user_id.in.(${subIds.join(',')})`)
         } else {
           query = query.eq('assigned_by', user.id)
         }
@@ -92,21 +100,31 @@ export default function MonitoringPage() {
         rawTasks = data || []
       } else if (role === 'manajer') {
         tableName = 'cascading_uraian_spv'
-        const { data } = await supabase
+        let query = supabase
           .from('cascading_uraian_spv')
           .select('*, subordinate:users!spv_user_id(*, pegawai(*)), parent_output:cascading_output_manajer(*)')
-          .eq('assigned_by', user.id)
+        if (subIds.length > 0) {
+          query = query.or(`assigned_by.eq.${user.id},spv_user_id.in.(${subIds.join(',')})`)
+        } else {
+          query = query.eq('assigned_by', user.id)
+        }
+        const { data } = await query
         rawTasks = data || []
       } else if (role === 'supervisor') {
         tableName = 'cascading_sub_uraian_staff'
-        const { data } = await supabase
+        let query = supabase
           .from('cascading_sub_uraian_staff')
           .select('*, subordinate:users!staff_user_id(*, pegawai(*)), parent_uraian:cascading_uraian_spv(*)')
-          .eq('assigned_by', user.id)
+        if (subIds.length > 0) {
+          query = query.or(`assigned_by.eq.${user.id},staff_user_id.in.(${subIds.join(',')})`)
+        } else {
+          query = query.eq('assigned_by', user.id)
+        }
+        const { data } = await query
         rawTasks = data || []
       }
 
-      // 3. Fetch reports for all relevant task ids
+      // 4. Fetch reports for all relevant task ids
       const taskIds = rawTasks.map(t => t.id)
       let reportsData: any[] = []
       if (taskIds.length > 0) {
@@ -117,9 +135,24 @@ export default function MonitoringPage() {
         reportsData = rep || []
       }
 
-      // 4. Group by subordinate
+      // 5. Pre-populate subMap with all structural subordinates
       const subMap = new Map<string, SubordinatePerformance>()
 
+      structuralSubs.forEach(sub => {
+        subMap.set(sub.id, {
+          user: sub,
+          tasks: [],
+          totalTasks: 0,
+          agreedTasks: 0,
+          pendingTasks: 0,
+          objectedTasks: 0,
+          overallProgress: 0,
+          totalReports: 0,
+          pendingReports: 0,
+        })
+      })
+
+      // 6. Group tasks by subordinate
       rawTasks.forEach(item => {
         const sub = item.subordinate as User
         if (!sub || !sub.id) return
@@ -256,6 +289,23 @@ export default function MonitoringPage() {
     if (subordinatesData.length === 0) return
 
     const exportRows = subordinatesData.flatMap((sub, subIdx) => {
+      if (sub.tasks.length === 0) {
+        return [{
+          'No': `${subIdx + 1}`,
+          'Nama Pegawai Bawahan': sub.user.pegawai?.nama_lengkap || sub.user.email,
+          'NIP': sub.user.pegawai?.nip || '-',
+          'Jabatan': sub.user.pegawai?.jabatan || sub.user.role,
+          'Unit Kerja': sub.user.pegawai?.unit_es2 || '-',
+          'Nama Tugas / Output': 'Belum Ada Penugasan',
+          'Target': '-',
+          'Satuan': '-',
+          'Capaian Disetujui': 0,
+          'Status SKP': 'Belum Ada Penugasan',
+          'Direct Sync': 'Tidak',
+          'Progress Pegawai (%)': '0%',
+        }]
+      }
+
       return sub.tasks.map((task, tIdx) => ({
         'No': `${subIdx + 1}.${tIdx + 1}`,
         'Nama Pegawai Bawahan': sub.user.pegawai?.nama_lengkap || sub.user.email,
@@ -542,7 +592,12 @@ export default function MonitoringPage() {
                         </td>
 
                         <td className="p-3">
-                          {allAgreed ? (
+                          {sub.totalTasks === 0 ? (
+                            <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold flex items-center gap-1 w-fit">
+                              <span className="material-symbols-outlined text-xs">info</span>
+                              Belum Ada Penugasan
+                            </span>
+                          ) : allAgreed ? (
                             <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold flex items-center gap-1 w-fit">
                               <span className="material-symbols-outlined text-xs">check_circle</span>
                               Semua Disepakati ({sub.agreedTasks}/{sub.totalTasks})
@@ -615,38 +670,45 @@ export default function MonitoringPage() {
                                 Rincian Butir Tugas SKP: {sub.user.pegawai?.nama_lengkap || sub.user.email}
                               </h5>
 
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                {sub.tasks.map(task => (
-                                  <div
-                                    key={task.id}
-                                    className="p-3 rounded-2xl bg-white border border-outline-variant/40 space-y-2 shadow-2xs"
-                                  >
-                                    <div className="flex items-center justify-between text-xs">
-                                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                        task.status === 'agreed'
-                                          ? 'bg-emerald-100 text-emerald-800'
-                                          : task.status === 'objected'
-                                            ? 'bg-rose-100 text-rose-800'
-                                            : 'bg-amber-100 text-amber-800'
-                                      }`}>
-                                        {task.status === 'agreed' ? 'Disepakati' : task.status === 'objected' ? 'Disanggah' : 'Menunggu'}
-                                      </span>
-                                      <span className="font-bold text-primary text-xs">
-                                        Target: {task.target} {task.satuan}
-                                      </span>
-                                    </div>
+                              {sub.tasks.length === 0 ? (
+                                <div className="p-4 rounded-2xl bg-white border border-outline-variant/30 text-xs text-on-surface-variant flex items-center gap-2">
+                                  <span className="material-symbols-outlined text-sm text-slate-400">info</span>
+                                  <span>Belum ada butir penugasan sub-uraian yang dialokasikan kepada pegawai ini.</span>
+                                </div>
+                              ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                  {sub.tasks.map(task => (
+                                    <div
+                                      key={task.id}
+                                      className="p-3 rounded-2xl bg-white border border-outline-variant/40 space-y-2 shadow-2xs"
+                                    >
+                                      <div className="flex items-center justify-between text-xs">
+                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                          task.status === 'agreed'
+                                            ? 'bg-emerald-100 text-emerald-800'
+                                            : task.status === 'objected'
+                                              ? 'bg-rose-100 text-rose-800'
+                                              : 'bg-amber-100 text-amber-800'
+                                        }`}>
+                                          {task.status === 'agreed' ? 'Disepakati' : task.status === 'objected' ? 'Disanggah' : 'Menunggu'}
+                                        </span>
+                                        <span className="font-bold text-primary text-xs">
+                                          Target: {task.target} {task.satuan}
+                                        </span>
+                                      </div>
 
-                                    <p className="font-semibold text-xs text-on-surface leading-snug">
-                                      {task.title}
-                                    </p>
+                                      <p className="font-semibold text-xs text-on-surface leading-snug">
+                                        {task.title}
+                                      </p>
 
-                                    <div className="pt-1 flex items-center justify-between text-[11px] text-on-surface-variant border-t border-outline-variant/20">
-                                      <span>Realisasi Disetujui:</span>
-                                      <b className="text-on-surface">{task.capaianApproved} {task.satuan}</b>
+                                      <div className="pt-1 flex items-center justify-between text-[11px] text-on-surface-variant border-t border-outline-variant/20">
+                                        <span>Realisasi Disetujui:</span>
+                                        <b className="text-on-surface">{task.capaianApproved} {task.satuan}</b>
+                                      </div>
                                     </div>
-                                  </div>
-                                ))}
-                              </div>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           </td>
                         </tr>

@@ -17,7 +17,7 @@ import {
   ASPEK_BERAKHLAK,
   RATING_PERILAKU_CONFIG,
 } from '@/lib/constants/perilakuKerja'
-import { getStructuralSuperiors, StructuralSuperiors } from '@/lib/skpHierarchy'
+import { getStructuralSuperiors, getStructuralSubordinates, StructuralSuperiors } from '@/lib/skpHierarchy'
 import Swal from 'sweetalert2'
 
 export default function EvaluasiPerilakuKerjaPage() {
@@ -82,42 +82,12 @@ export default function EvaluasiPerilakuKerjaPage() {
       setIsLoadingSubordinates(true)
       const supabase = createClient()
       try {
-        let subs: User[] = []
-        if (role === 'rektor' || role === 'admin') {
-          const { data } = await supabase
-            .from('users')
-            .select('*, pegawai(*)')
-            .ilike('role', '%pimpinan_sukpa%')
-          subs = (data as User[]) || []
-        } else if (role === 'pimpinan_sukpa') {
-          const { data } = await supabase
-            .from('users')
-            .select('*, pegawai(*)')
-            .ilike('role', '%pimpinan_unit%')
-          subs = (data as User[]) || []
-        } else if (role === 'pimpinan_unit') {
-          const { data } = await supabase
-            .from('users')
-            .select('*, pegawai(*)')
-            .ilike('role', '%manajer%')
-          subs = (data as User[]) || []
-        } else if (role === 'manajer') {
-          const { data } = await supabase
-            .from('users')
-            .select('*, pegawai(*)')
-            .ilike('role', '%supervisor%')
-          subs = (data as User[]) || []
-        } else if (role === 'supervisor') {
-          const { data } = await supabase
-            .from('users')
-            .select('*, pegawai(*)')
-            .ilike('role', '%staff%')
-          subs = (data as User[]) || []
-        }
-
+        const subs = await getStructuralSubordinates(user, role, supabase)
         setSubordinates(subs)
-        if (subs.length > 0 && !selectedSubordinateId) {
-          setSelectedSubordinateId(subs[0].id)
+        if (subs.length > 0) {
+          if (!selectedSubordinateId || !subs.some(s => s.id === selectedSubordinateId)) {
+            setSelectedSubordinateId(subs[0].id)
+          }
         }
       } catch (err) {
         console.warn('Error fetching subordinates:', err)
