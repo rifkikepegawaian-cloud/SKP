@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useAuthStore } from '@/store/authStore'
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('')
+  const [nip, setNip] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -19,17 +19,32 @@ export default function LoginPage() {
     setIsProcessing(true)
     setError('')
 
-    // Append @undip.ac.id if the user only entered a NIP
-    const loginEmail = email.includes('@') ? email : `${email}@undip.ac.id`
+    const cleanNip = nip.trim()
+    const cleanPassword = password.trim()
+
+    if (!cleanNip) {
+      setError('Silakan masukkan NIP Anda.')
+      setIsProcessing(false)
+      return
+    }
+
+    if (!cleanPassword) {
+      setError('Silakan masukkan password (8 digit terakhir NIP Anda).')
+      setIsProcessing(false)
+      return
+    }
+
+    // Format akun Supabase Auth menggunakan {NIP}@undip.ac.id
+    const loginEmail = cleanNip.includes('@') ? cleanNip : `${cleanNip}@undip.ac.id`
 
     const supabase = createClient()
     const { error: authError } = await supabase.auth.signInWithPassword({
       email: loginEmail,
-      password,
+      password: cleanPassword,
     })
 
     if (authError) {
-      setError('Email atau password salah. Silakan coba lagi.')
+      setError('NIP atau password salah. Pastikan password menggunakan 8 digit terakhir NIP Anda.')
       setIsProcessing(false)
       return
     }
@@ -79,43 +94,52 @@ export default function LoginPage() {
                 <p className="font-label-sm text-label-sm text-secondary">Universitas Diponegoro</p>
               </div>
             </div>
-            <h2 className="font-headline-lg text-headline-lg text-on-background mb-3">HRIS Smart-<span className="text-primary">Performance</span></h2>
-            <p className="text-body-lg text-on-surface-variant leading-relaxed">Sistem Manajemen Kinerja & Remunerasi Terintegrasi untuk PNS dan Tenaga Kependidikan.</p>
+            <h2 className="font-headline-lg text-headline-lg text-on-background mb-3">
+              HRIS Smart-<span className="text-primary">Performance</span>
+            </h2>
+            <p className="text-body-lg text-on-surface-variant leading-relaxed">
+              Sistem Manajemen Kinerja Terintegrasi untuk PNS dan Tenaga Kependidikan.
+            </p>
           </div>
 
           <div className="space-y-4">
+            {/* Fitur 1: Cascading SKP */}
             <div className="flex items-start gap-4 p-4 glass-card rounded-2xl hover:-translate-y-1 transition-transform">
               <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary flex-shrink-0">
                 <span className="material-symbols-outlined">account_tree</span>
               </div>
               <div>
                 <p className="font-body-md font-semibold text-on-surface">Cascading SKP</p>
-                <p className="text-body-sm text-on-surface-variant">Hubungkan IKU Institusi ke kinerja individu secara otomatis.</p>
+                <p className="text-body-sm text-on-surface-variant">Hubungkan IKU Institusi ke rencana kinerja individu secara otomatis.</p>
               </div>
             </div>
+
+            {/* Fitur 2: Evaluasi Kinerja SKP */}
             <div className="flex items-start gap-4 p-4 glass-card rounded-2xl hover:-translate-y-1 transition-transform">
               <div className="w-10 h-10 rounded-xl bg-success/10 flex items-center justify-center text-success flex-shrink-0">
-                <span className="material-symbols-outlined">history_edu</span>
+                <span className="material-symbols-outlined">verified</span>
               </div>
               <div>
-                <p className="font-body-md font-semibold text-on-surface">Agile Logbook</p>
-                <p className="text-body-sm text-on-surface-variant">Catat progres harian dan unggah bukti dukung dengan mudah.</p>
+                <p className="font-body-md font-semibold text-on-surface">Evaluasi Kinerja SKP</p>
+                <p className="text-body-sm text-on-surface-variant">Penilaian capaian hasil kerja kualitatif dan perilaku kerja BerAKHLAK sesuai PermenPAN-RB.</p>
               </div>
             </div>
+
+            {/* Fitur 3: Dialog & Matriks Kinerja */}
             <div className="flex items-start gap-4 p-4 glass-card rounded-2xl hover:-translate-y-1 transition-transform">
-              <div className="w-10 h-10 rounded-xl bg-warning/10 flex items-center justify-center text-warning flex-shrink-0">
-                <span className="material-symbols-outlined">payments</span>
+              <div className="w-10 h-10 rounded-xl bg-info/10 flex items-center justify-center text-info flex-shrink-0">
+                <span className="material-symbols-outlined">forum</span>
               </div>
               <div>
-                <p className="font-body-md font-semibold text-on-surface">Auto Remunerasi</p>
-                <p className="text-body-sm text-on-surface-variant">Kalkulasi pembayaran otomatis berdasarkan capaian & koefisien risiko.</p>
+                <p className="font-body-md font-semibold text-on-surface">Dialog & Matriks Kinerja</p>
+                <p className="text-body-sm text-on-surface-variant">Penyelarasan target kinerja organisasi dari pimpinan universitas hingga pelaksana.</p>
               </div>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="px-3 py-1 bg-primary/10 text-primary rounded-full font-label-sm text-label-sm">v2.0.0</span>
-            <span className="text-body-sm text-on-surface-variant">Periode Aktif: Januari – Desember 2024</span>
+            <span className="px-3 py-1 bg-primary/10 text-primary rounded-full font-label-sm text-label-sm font-bold">v2.1.0</span>
+            <span className="text-body-sm text-on-surface-variant">Periode Aktif: Tahun {new Date().getFullYear()}</span>
           </div>
         </div>
 
@@ -145,27 +169,54 @@ export default function LoginPage() {
           )}
 
           <form onSubmit={handleLogin} className="space-y-5">
+            {/* NIP Input */}
             <div>
-              <label className="block font-label-md text-label-md text-on-surface-variant mb-2 uppercase tracking-wider">NIP / Email</label>
+              <label className="block font-label-md text-label-md text-on-surface-variant mb-2 uppercase tracking-wider font-semibold">
+                NIP (Nomor Induk Pegawai)
+              </label>
               <div className="relative">
                 <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-outline">badge</span>
-                <input type="text" placeholder="198001012005011001 atau nama@undip.ac.id" required
-                  value={email} onChange={e => setEmail(e.target.value)}
-                  className="w-full bg-surface-container-lowest border border-outline-variant/50 rounded-xl pl-12 pr-4 py-3 text-body-md focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all" />
+                <input
+                  type="text"
+                  placeholder="Masukkan NIP Anda (misal: 197007221998021002)"
+                  required
+                  value={nip}
+                  onChange={e => setNip(e.target.value)}
+                  className="w-full bg-surface-container-lowest border border-outline-variant/50 rounded-xl pl-12 pr-4 py-3 text-body-md focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all font-medium"
+                />
               </div>
             </div>
 
+            {/* Password Input */}
             <div>
-              <label className="block font-label-md text-label-md text-on-surface-variant mb-2 uppercase tracking-wider">Password</label>
+              <label className="block font-label-md text-label-md text-on-surface-variant mb-2 uppercase tracking-wider font-semibold">
+                Password
+              </label>
               <div className="relative">
                 <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-outline">lock</span>
-                <input type={showPassword ? 'text' : 'password'} placeholder="••••••••" required
-                  value={password} onChange={e => setPassword(e.target.value)}
-                  className="w-full bg-surface-container-lowest border border-outline-variant/50 rounded-xl pl-12 pr-12 py-3 text-body-md focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all" />
-                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-outline hover:text-primary transition-colors">
-                  <span className="material-symbols-outlined">{showPassword ? 'visibility_off' : 'visibility'}</span>
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder="8 digit terakhir NIP Anda"
+                  required
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  className="w-full bg-surface-container-lowest border border-outline-variant/50 rounded-xl pl-12 pr-12 py-3 text-body-md focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all font-medium tracking-wide"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-outline hover:text-primary transition-colors cursor-pointer"
+                  title={showPassword ? 'Sembunyikan password' : 'Tampilkan password'}
+                >
+                  <span className="material-symbols-outlined text-xl">
+                    {showPassword ? 'visibility_off' : 'visibility'}
+                  </span>
                 </button>
               </div>
+              <p className="text-[11px] text-on-surface-variant mt-1.5 flex items-center gap-1.5 font-medium">
+                <span className="material-symbols-outlined text-sm text-primary">key</span>
+                Gunakan 8 digit terakhir NIP Anda sebagai password.
+              </p>
             </div>
 
             <div className="flex items-center justify-between">
@@ -175,18 +226,34 @@ export default function LoginPage() {
               </label>
             </div>
 
-            <button type="submit" disabled={isProcessing}
-              className={`w-full bg-primary text-on-primary py-3.5 rounded-xl font-headline-md font-bold shadow-lg hover:-translate-y-1 active:translate-y-0 transition-all flex items-center justify-center gap-2 group ${isProcessing ? 'opacity-80 cursor-wait' : ''}`}>
+            <button
+              type="submit"
+              disabled={isProcessing}
+              className={`w-full bg-primary text-on-primary py-3.5 rounded-xl font-headline-md font-bold shadow-lg hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center justify-center gap-2 group cursor-pointer ${
+                isProcessing ? 'opacity-80 cursor-wait' : ''
+              }`}
+            >
               <span>{isProcessing ? 'Memproses...' : 'Masuk ke Dashboard'}</span>
-              {!isProcessing && <span className="material-symbols-outlined group-hover:translate-x-1 transition-transform">arrow_forward</span>}
+              {!isProcessing && (
+                <span className="material-symbols-outlined group-hover:translate-x-1 transition-transform">
+                  arrow_forward
+                </span>
+              )}
             </button>
           </form>
 
-          <div className="mt-6 p-4 bg-primary/5 rounded-xl border border-primary/10">
-            <p className="font-label-sm text-label-sm text-primary font-bold mb-1">Informasi Login</p>
-            <p className="text-body-sm text-on-surface-variant">Gunakan email dan password yang telah diberikan oleh Admin.</p>
+          {/* Informasi Login Card */}
+          <div className="mt-6 p-4 bg-primary/5 rounded-2xl border border-primary/10 space-y-1">
+            <p className="font-label-sm text-label-sm text-primary font-bold flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-base">info</span>
+              Informasi Login Pegawai
+            </p>
+            <p className="text-body-sm text-on-surface-variant text-xs leading-relaxed">
+              Masuk menggunakan <strong>NIP</strong> Anda sebagai username dan <strong>8 digit terakhir NIP</strong> sebagai password bawaan.
+            </p>
           </div>
         </div>
+
       </div>
     </div>
   )

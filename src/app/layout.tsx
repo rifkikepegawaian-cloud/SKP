@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "HRIS Smart-Performance — SKP Universitas Diponegoro",
-  description: "Sistem Manajemen Kinerja & Remunerasi Terintegrasi Universitas Diponegoro. Platform SKP digital berbasis IKU untuk PNS dan Tenaga Kependidikan.",
+  description: "Sistem Manajemen Kinerja Terintegrasi Universitas Diponegoro. Platform SKP digital berbasis IKU untuk PNS dan Tenaga Kependidikan.",
 };
 
 export default function RootLayout({
