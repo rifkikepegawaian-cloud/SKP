@@ -237,10 +237,6 @@ export default function ManajemenPegawaiUserPage() {
         showToast('Pilih Unit ES II untuk role Wakil Pimpinan Unit', 'error')
         return
       }
-      if (!ledUnitEs3) {
-        showToast('Pilih Bagian / Bidang ES III untuk role Wakil Pimpinan Unit', 'error')
-        return
-      }
     }
     if (selectedRoles.includes('pimpinan_sukpa') && !ledSukpa) {
       showToast('Pilih SUKPA yang dipimpin untuk role Pimpinan SUKPA', 'error')
@@ -1236,14 +1232,14 @@ export default function ManajemenPegawaiUserPage() {
                         </div>
                         <div>
                           <label className="block text-[11px] font-bold text-sky-900 mb-1 uppercase tracking-wider">
-                            Bagian / Bidang ES III yang Dibidangi <span className="text-error">*</span>
+                            Bagian / Bidang ES III yang Dibidangi (Opsional)
                           </label>
                           <select
                             value={ledUnitEs3}
                             onChange={e => setLedUnitEs3(e.target.value)}
                             className="w-full bg-white border border-sky-300 rounded-xl px-3 py-2 text-body-sm outline-none focus:ring-2 focus:ring-sky-400 font-medium text-on-surface"
                           >
-                            <option value="">-- Pilih Bagian / Bidang ES III --</option>
+                            <option value="">-- Seluruh Bagian / Tanpa Spesifik (Opsional) --</option>
                             {availableUnitEs3List.map(bagian => (
                               <option key={bagian} value={bagian}>{bagian}</option>
                             ))}
@@ -1316,8 +1312,8 @@ export default function ManajemenPegawaiUserPage() {
                   className="px-6 py-2.5 rounded-xl border border-outline-variant/50 text-on-surface-variant font-label-md hover:bg-surface-container transition-all">
                   Batal
                 </button>
-                <button onClick={handleEditRole} disabled={saving || selectedRoles.join(',') === selectedUser.role}
-                  className="px-6 py-2.5 rounded-xl bg-primary text-on-primary font-label-md shadow-lg shadow-primary/20 hover:opacity-90 transition-all disabled:opacity-50 flex items-center gap-2">
+                <button onClick={handleEditRole} disabled={saving || selectedRoles.length === 0}
+                  className="px-6 py-2.5 rounded-xl bg-primary text-on-primary font-label-md shadow-lg shadow-primary/20 hover:opacity-90 transition-all disabled:opacity-50 flex items-center gap-2 cursor-pointer">
                   {saving && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>}
                   Simpan
                 </button>

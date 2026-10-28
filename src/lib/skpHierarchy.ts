@@ -98,7 +98,7 @@ export async function getStructuralSuperiors(
     let pangkatGol = u.pegawai?.pangkat_golongan || '-'
     const tt = (u.pegawai?.tugas_tambahan || '').trim()
     let jabatan = (tt && tt !== u.pegawai?.unit_es4 && tt !== u.pegawai?.unit_es3) ? tt : (u.pegawai?.jabatan || defaultJabatan)
-    if (defaultJabatan && !jabatan.toLowerCase().includes('supervisor') && !jabatan.toLowerCase().includes('manajer') && !jabatan.toLowerCase().includes('rektor') && !jabatan.toLowerCase().includes('dekan') && !jabatan.toLowerCase().includes('direktur') && !jabatan.toLowerCase().includes('pimpinan') && !jabatan.toLowerCase().includes('badan') && !jabatan.toLowerCase().includes('biro') && !jabatan.toLowerCase().includes('senat') && !jabatan.toLowerCase().includes('mwa')) {
+    if (defaultJabatan && !jabatan.toLowerCase().includes('supervisor') && !jabatan.toLowerCase().includes('manajer') && !jabatan.toLowerCase().includes('rektor') && !jabatan.toLowerCase().includes('dekan') && !jabatan.toLowerCase().includes('direktur') && !jabatan.toLowerCase().includes('pimpinan') && !jabatan.toLowerCase().includes('badan') && !jabatan.toLowerCase().includes('biro') && !jabatan.toLowerCase().includes('senat') && !jabatan.toLowerCase().includes('mwa') && !jabatan.toLowerCase().includes('lembaga') && !jabatan.toLowerCase().includes('lppm')) {
       jabatan = defaultJabatan
     }
     return {
