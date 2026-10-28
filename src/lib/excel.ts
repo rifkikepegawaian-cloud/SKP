@@ -118,6 +118,7 @@ export interface PegawaiImportRow {
   unit_es3: string
   unit_es4: string
   jabatan?: string
+  tugas_tambahan?: string
   tmt_jabatan?: string
 }
 
@@ -137,6 +138,10 @@ const PEGAWAI_COLUMN_MAP: Record<string, keyof PegawaiImportRow> = {
   'unit es 4': 'unit_es4',
   'unit_es4': 'unit_es4',
   'jabatan': 'jabatan',
+  'tugas tambahan': 'tugas_tambahan',
+  'tugas_tambahan': 'tugas_tambahan',
+  'jabatan struktural': 'tugas_tambahan',
+  'jabatan_struktural': 'tugas_tambahan',
   'tmt jabatan': 'tmt_jabatan',
   'tmt_jabatan': 'tmt_jabatan'
 }
