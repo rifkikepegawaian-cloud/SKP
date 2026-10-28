@@ -17,9 +17,14 @@ import {
   ASPEK_BERAKHLAK,
   RATING_PERILAKU_CONFIG,
 } from '@/lib/constants/perilakuKerja'
+import {
+  RUBRIK_PERILAKU_TENDIK,
+  LevelPilihan,
+  JawabanIndikator,
+  skorToRating,
+  generateFeedbackAspek,
+} from '@/lib/constants/rubrikPerilakuTendik'
 import { getStructuralSuperiors, getStructuralSubordinates, StructuralSuperiors } from '@/lib/skpHierarchy'
-import KuesionerPerilakuModal from '@/components/evaluasi/KuesionerPerilakuModal'
-import { RUBRIK_PERILAKU_TENDIK, JawabanIndikator } from '@/lib/constants/rubrikPerilakuTendik'
 import Swal from 'sweetalert2'
 
 export default function EvaluasiPerilakuKerjaPage() {
@@ -40,20 +45,29 @@ export default function EvaluasiPerilakuKerjaPage() {
   // Structural Superiors (Pejabat Penilai & Atasan Pejabat Penilai)
   const [structuralSuperiors, setStructuralSuperiors] = useState<StructuralSuperiors | null>(null)
 
-  // Kuesioner Rubrik Modal State
-  const [isKuesionerOpen, setIsKuesionerOpen] = useState(false)
-  const [kuesionerInitialAspekId, setKuesionerInitialAspekId] = useState(1)
-  const [kuesionerScores, setKuesionerScores] = useState<Record<number, { score: number }>>({})
+  // Questionnaire answers per indicator (keyed by ind.id e.g. '1.1' .. '7.3')
+  const [jawabanKuesioner, setJawabanKuesioner] = useState<Record<string, JawabanIndikator>>(() => {
+    const initial: Record<string, JawabanIndikator> = {}
+    RUBRIK_PERILAKU_TENDIK.forEach(aspek => {
+      aspek.indikatorList.forEach(ind => {
+        initial[ind.id] = {
+          level: 'sesuai_ekspektasi',
+          skor: ind.sesuai.skorDefault,
+        }
+      })
+    })
+    return initial
+  })
 
   // Perilaku data state (keyed by aspek_id: 1..7)
   const [items, setItems] = useState<Record<number, NilaiPerilakuItem>>(() => {
     const initial: Record<number, NilaiPerilakuItem> = {}
-    ASPEK_BERAKHLAK.forEach(aspek => {
+    RUBRIK_PERILAKU_TENDIK.forEach(aspek => {
       initial[aspek.id] = {
         aspek_id: aspek.id,
-        ekspektasi_khusus: aspek.defaultEkspektasi,
+        ekspektasi_khusus: ASPEK_BERAKHLAK.find(a => a.id === aspek.id)?.defaultEkspektasi || '',
         rating: 'sesuai_ekspektasi',
-        umpan_balik: '',
+        umpan_balik: 'Menunjukkan komitmen dan integritas yang konsisten dalam bekerja.',
       }
     })
     return initial
@@ -106,7 +120,7 @@ export default function EvaluasiPerilakuKerjaPage() {
     fetchSubordinates()
   }, [isSuperior, role, user, selectedSubordinateId])
 
-  // 2. Fetch or load Perilaku Evaluation data for current target user
+  // 2. Fetch or load Perilaku Evaluation & Questionnaire answers for current target user
   useEffect(() => {
     const fetchPerilaku = async () => {
       if (!currentTargetUser) {
@@ -118,7 +132,34 @@ export default function EvaluasiPerilakuKerjaPage() {
       const targetUserId = currentTargetUser.id
       const periodeId = periode?.id || '2026'
       const storageKey = `evaluasi_perilaku_${targetUserId}_${periodeId}`
+      const kuesionerKey = `kuesioner_rubrik_${targetUserId}_${periodeId}`
 
+      // 1. Load saved questionnaire answers from localStorage
+      let currentJawaban: Record<string, JawabanIndikator> = {}
+      const savedKuesioner = localStorage.getItem(kuesionerKey)
+      if (savedKuesioner) {
+        try {
+          const parsed = JSON.parse(savedKuesioner)
+          if (parsed.jawaban) currentJawaban = parsed.jawaban
+        } catch (e) {
+          console.warn('Gagal membaca saved kuesioner:', e)
+        }
+      }
+
+      // Default missing indicators
+      RUBRIK_PERILAKU_TENDIK.forEach(aspek => {
+        aspek.indikatorList.forEach(ind => {
+          if (!currentJawaban[ind.id]) {
+            currentJawaban[ind.id] = {
+              level: 'sesuai_ekspektasi',
+              skor: ind.sesuai.skorDefault,
+            }
+          }
+        })
+      })
+      setJawabanKuesioner(currentJawaban)
+
+      // 2. Fetch existing saved items from Supabase or localStorage
       try {
         const supabase = createClient()
         const { data, error } = await supabase
@@ -127,39 +168,33 @@ export default function EvaluasiPerilakuKerjaPage() {
           .eq('periode_id', periodeId)
           .eq('user_id', targetUserId)
 
-        if (!error && data && data.length > 0) {
-          const loaded: Record<number, NilaiPerilakuItem> = {}
-          ASPEK_BERAKHLAK.forEach(aspek => {
-            const row = (data as SKPPerilakuKerja[]).find(r => r.aspek_id === aspek.id)
-            loaded[aspek.id] = {
-              aspek_id: aspek.id,
-              ekspektasi_khusus: row?.ekspektasi_khusus || aspek.defaultEkspektasi,
-              rating: (row?.rating as RatingPerilaku) || 'sesuai_ekspektasi',
-              umpan_balik: row?.umpan_balik || '',
-            }
-          })
-          setItems(loaded)
-        } else {
-          // Check localStorage fallback
-          const localSaved = localStorage.getItem(storageKey)
-          if (localSaved) {
-            setItems(JSON.parse(localSaved))
-          } else {
-            // Default configuration
-            const defaults: Record<number, NilaiPerilakuItem> = {}
-            ASPEK_BERAKHLAK.forEach(aspek => {
-              defaults[aspek.id] = {
-                aspek_id: aspek.id,
-                ekspektasi_khusus: aspek.defaultEkspektasi,
-                rating: 'sesuai_ekspektasi',
-                umpan_balik: 'Menunjukkan komitmen dan integritas yang konsisten dalam bekerja.',
-              }
-            })
-            setItems(defaults)
+        const loaded: Record<number, NilaiPerilakuItem> = {}
+        const localSaved = localStorage.getItem(storageKey)
+        const parsedLocal = localSaved ? JSON.parse(localSaved) : null
+
+        RUBRIK_PERILAKU_TENDIK.forEach(aspek => {
+          const row = (!error && data) ? (data as SKPPerilakuKerja[]).find(r => r.aspek_id === aspek.id) : null
+          const localItem = parsedLocal ? parsedLocal[aspek.id] : null
+
+          // Compute rating strictly based on currentJawaban
+          const scores = aspek.indikatorList.map(ind => currentJawaban[ind.id]?.skor || 85)
+          const avg = Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10
+          const computedRating = skorToRating(avg)
+          const autoFeedback = generateFeedbackAspek(aspek, currentJawaban)
+
+          const defaultEksp = ASPEK_BERAKHLAK.find(a => a.id === aspek.id)?.defaultEkspektasi || ''
+
+          loaded[aspek.id] = {
+            aspek_id: aspek.id,
+            ekspektasi_khusus: row?.ekspektasi_khusus || localItem?.ekspektasi_khusus || defaultEksp,
+            rating: computedRating,
+            umpan_balik: row?.umpan_balik || localItem?.umpan_balik || autoFeedback,
           }
-        }
+        })
+
+        setItems(loaded)
       } catch (err) {
-        console.warn('Fallback to localStorage for perilaku evaluation:', err)
+        console.warn('Fallback to local items for perilaku evaluation:', err)
       } finally {
         setIsLoadingData(false)
       }
@@ -168,123 +203,101 @@ export default function EvaluasiPerilakuKerjaPage() {
     fetchPerilaku()
   }, [currentTargetUser, periode])
 
-  // 2b. Load Kuesioner Rubrik summary from localStorage
-  useEffect(() => {
-    if (!currentTargetUser) {
-      setKuesionerScores({})
-      return
-    }
-    const targetUserId = currentTargetUser.id
-    const periodeId = periode?.id || '2026'
-    const storageKey = `kuesioner_rubrik_${targetUserId}_${periodeId}`
-    const saved = localStorage.getItem(storageKey)
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved)
-        if (parsed.jawaban) {
-          const summary: Record<number, { score: number }> = {}
-          RUBRIK_PERILAKU_TENDIK.forEach(aspek => {
-            let total = 0
-            let count = 0
-            aspek.indikatorList.forEach(ind => {
-              if (parsed.jawaban[ind.id]) {
-                total += parsed.jawaban[ind.id].skor
-                count++
-              }
-            })
-            if (count > 0) {
-              summary[aspek.id] = { score: Math.round((total / count) * 10) / 10 }
-            }
-          })
-          setKuesionerScores(summary)
-        }
-      } catch (e) {
-        console.warn('Gagal membaca ringkasan kuesioner rubrik:', e)
-      }
-    } else {
-      setKuesionerScores({})
-    }
-  }, [currentTargetUser, periode])
-
-  // Handle apply from Kuesioner Rubrik Modal
-  const handleApplyKuesionerResult = (
-    results: Record<
-      number,
-      {
-        rating: RatingPerilaku
-        umpanBalik: string
-        averageScore: number
-        answersSummary: Record<string, JawabanIndikator>
-      }
-    >
+  // Handle option selection for an indicator question
+  const handleSelectIndikatorOption = (
+    indId: string,
+    level: LevelPilihan,
+    skorDefault: number,
+    aspekId: number
   ) => {
-    setItems(prev => {
-      const updated = { ...prev }
-      Object.entries(results).forEach(([aspekIdStr, val]) => {
-        const aId = Number(aspekIdStr)
-        if (updated[aId]) {
-          updated[aId] = {
-            ...updated[aId],
-            rating: val.rating,
-            umpan_balik: val.umpanBalik,
-          }
+    const updatedJawaban = {
+      ...jawabanKuesioner,
+      [indId]: { level, skor: skorDefault },
+    }
+    setJawabanKuesioner(updatedJawaban)
+
+    // Calculate new aspect score & rating
+    const aspekDef = RUBRIK_PERILAKU_TENDIK.find(a => a.id === aspekId)
+    if (aspekDef) {
+      const scores = aspekDef.indikatorList.map(ind => updatedJawaban[ind.id]?.skor || 85)
+      const avg = Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10
+      const newRating = skorToRating(avg)
+
+      setItems(prev => {
+        const currentItem = prev[aspekId]
+        const nextItems = {
+          ...prev,
+          [aspekId]: {
+            ...currentItem,
+            rating: newRating,
+          },
         }
+
+        if (currentTargetUser) {
+          const targetUserId = currentTargetUser.id
+          const periodeId = periode?.id || '2026'
+          localStorage.setItem(`evaluasi_perilaku_${targetUserId}_${periodeId}`, JSON.stringify(nextItems))
+        }
+
+        return nextItems
       })
+    }
 
-      // Immediately sync with localStorage
-      if (currentTargetUser) {
-        const targetUserId = currentTargetUser.id
-        const periodeId = periode?.id || '2026'
-        const storageKey = `evaluasi_perilaku_${targetUserId}_${periodeId}`
-        localStorage.setItem(storageKey, JSON.stringify(updated))
-      }
-
-      return updated
-    })
-
-    setKuesionerScores(prev => {
-      const updated = { ...prev }
-      Object.entries(results).forEach(([aspekIdStr, val]) => {
-        updated[Number(aspekIdStr)] = { score: val.averageScore }
-      })
-      return updated
-    })
+    // Persist questionnaire answers in localStorage immediately
+    if (currentTargetUser) {
+      const targetUserId = currentTargetUser.id
+      const periodeId = periode?.id || '2026'
+      localStorage.setItem(`kuesioner_rubrik_${targetUserId}_${periodeId}`, JSON.stringify({ jawaban: updatedJawaban }))
+    }
   }
 
-  // Handle rating change
-  const handleRatingChange = (aspekId: number, rating: RatingPerilaku) => {
-    setItems(prev => ({
-      ...prev,
-      [aspekId]: {
-        ...prev[aspekId],
-        rating,
-      },
-    }))
+  // Handle auto-apply recommended narrative based on current answers
+  const handleApplyRecommendedFeedback = (aspekId: number) => {
+    const aspekDef = RUBRIK_PERILAKU_TENDIK.find(a => a.id === aspekId)
+    if (!aspekDef) return
+    const rec = generateFeedbackAspek(aspekDef, jawabanKuesioner)
+    handleUmpanBalikChange(aspekId, rec)
   }
 
   // Handle umpan balik change
   const handleUmpanBalikChange = (aspekId: number, umpan_balik: string) => {
-    setItems(prev => ({
-      ...prev,
-      [aspekId]: {
-        ...prev[aspekId],
-        umpan_balik,
-      },
-    }))
+    setItems(prev => {
+      const next = {
+        ...prev,
+        [aspekId]: {
+          ...prev[aspekId],
+          umpan_balik,
+        },
+      }
+      if (currentTargetUser) {
+        const targetUserId = currentTargetUser.id
+        const periodeId = periode?.id || '2026'
+        localStorage.setItem(`evaluasi_perilaku_${targetUserId}_${periodeId}`, JSON.stringify(next))
+      }
+      return next
+    })
   }
 
   // Handle ekspektasi khusus change
   const handleEkspektasiChange = (aspekId: number, ekspektasi_khusus: string) => {
-    setItems(prev => ({
-      ...prev,
-      [aspekId]: {
-        ...prev[aspekId],
-        ekspektasi_khusus,
-      },
-    }))
+    setItems(prev => {
+      const next = {
+        ...prev,
+        [aspekId]: {
+          ...prev[aspekId],
+          ekspektasi_khusus,
+        },
+      }
+      if (currentTargetUser) {
+        const targetUserId = currentTargetUser.id
+        const periodeId = periode?.id || '2026'
+        localStorage.setItem(`evaluasi_perilaku_${targetUserId}_${periodeId}`, JSON.stringify(next))
+      }
+      return next
+    })
   }
 
-  // 3. Save Evaluation
+  // 3. Save Evaluation to Supabase & localStorage
   const handleSaveAssessment = async () => {
     if (!currentTargetUser) return
 
@@ -292,10 +305,12 @@ export default function EvaluasiPerilakuKerjaPage() {
     const targetUserId = currentTargetUser.id
     const periodeId = periode?.id || '2026'
     const storageKey = `evaluasi_perilaku_${targetUserId}_${periodeId}`
+    const kuesionerKey = `kuesioner_rubrik_${targetUserId}_${periodeId}`
 
     try {
       // 1. Save to localStorage immediately
       localStorage.setItem(storageKey, JSON.stringify(items))
+      localStorage.setItem(kuesionerKey, JSON.stringify({ jawaban: jawabanKuesioner }))
 
       // 2. Upsert to Supabase
       const supabase = createClient()
@@ -319,8 +334,8 @@ export default function EvaluasiPerilakuKerjaPage() {
 
       Swal.fire({
         icon: 'success',
-        title: 'Penilaian Berhasil Disimpan!',
-        text: `Evaluasi perilaku untuk ${currentTargetUser.pegawai?.nama_lengkap || currentTargetUser.email} telah tersimpan.`,
+        title: 'Penilaian Kuesioner Berhasil Disimpan!',
+        text: `Evaluasi perilaku untuk ${currentTargetUser.pegawai?.nama_lengkap || currentTargetUser.email} telah tersimpan berdasarkan hasil kuesioner rubrik.`,
         timer: 2000,
         showConfirmButton: false,
       })
@@ -335,21 +350,29 @@ export default function EvaluasiPerilakuKerjaPage() {
     }
   }
 
-  // Calculate Overall Predikat Perilaku
+  // Calculate Overall Predikat Perilaku & Average Score
   const perilakuMetrics = useMemo(() => {
     const list = Object.values(items)
     const countDiatas = list.filter(i => i.rating === 'di_atas_ekspektasi').length
     const countSesuai = list.filter(i => i.rating === 'sesuai_ekspektasi').length
     const countDibawah = list.filter(i => i.rating === 'di_bawah_ekspektasi').length
 
+    let totalScore = 0
+    let totalCount = 0
+    Object.values(jawabanKuesioner).forEach(j => {
+      totalScore += j.skor
+      totalCount++
+    })
+    const avgScore = totalCount > 0 ? Math.round((totalScore / totalCount) * 10) / 10 : 85
+
     let predikat = 'Sesuai Ekspektasi'
     let badgeClass = 'bg-emerald-50 text-emerald-700 border-emerald-200'
 
     if (countDibawah >= 3) {
-      predikat = 'Dibawah Ekspektasi'
+      predikat = 'Di Bawah Ekspektasi'
       badgeClass = 'bg-amber-50 text-amber-700 border-amber-200'
     } else if (countDiatas >= 4 && countDibawah === 0) {
-      predikat = 'Diatas Ekspektasi'
+      predikat = 'Di Atas Ekspektasi'
       badgeClass = 'bg-purple-50 text-purple-700 border-purple-200'
     }
 
@@ -357,13 +380,16 @@ export default function EvaluasiPerilakuKerjaPage() {
       countDiatas,
       countSesuai,
       countDibawah,
+      avgScore,
       predikat,
       badgeClass,
     }
-  }, [items])
+  }, [items, jawabanKuesioner])
+
+  const isEditable = activeTab === 'subordinate_assessment' && isSuperior
 
   return (
-    <div className="space-y-6 animate-fade-in pb-12">
+    <div className="space-y-6 animate-fade-in pb-16">
       
       {/* ── Page Header ── */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-outline-variant/30 shadow-xs">
@@ -374,10 +400,10 @@ export default function EvaluasiPerilakuKerjaPage() {
             <span>Evaluasi Perilaku Kerja</span>
           </div>
           <h2 className="text-xl font-extrabold text-on-surface tracking-tight" style={{ fontFamily: 'Manrope' }}>
-            Evaluasi Perilaku Kerja (Core Values BerAKHLAK)
+            Evaluasi Perilaku Kerja (Kuesioner Rubrik BerAKHLAK)
           </h2>
           <p className="text-xs text-on-surface-variant mt-0.5">
-            Penilaian 7 aspek standar perilaku kerja ASN yang dinilai langsung oleh pimpinan/atasan disertai umpan balik berkala.
+            Penilaian 7 nilai dasar BerAKHLAK berbasis instrumen kuesioner rubrik objektif 21 butir indikator standar tenaga kependidikan.
           </p>
         </div>
 
@@ -447,19 +473,6 @@ export default function EvaluasiPerilakuKerjaPage() {
                 ))
               )}
             </select>
-
-            <button
-              type="button"
-              onClick={() => {
-                setKuesionerInitialAspekId(1)
-                setIsKuesionerOpen(true)
-              }}
-              className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-primary text-white text-xs font-bold flex items-center gap-1.5 shadow-sm hover:from-indigo-700 hover:to-primary/90 transition-all cursor-pointer"
-              title="Isi instrumen kuesioner rubrik 21 butir perilaku tenaga kependidikan"
-            >
-              <span className="material-symbols-outlined text-sm">quiz</span>
-              Kuesioner Rubrik (21 Butir)
-            </button>
           </div>
         )}
       </div>
@@ -499,7 +512,7 @@ export default function EvaluasiPerilakuKerjaPage() {
           <div className="p-3 bg-surface-container-low rounded-2xl border border-outline-variant/20 flex flex-wrap items-center justify-between gap-3 text-xs">
             <span className="text-on-surface-variant flex items-center gap-1.5">
               <span className="material-symbols-outlined text-sm text-primary">verified_user</span>
-              Pejabat Penilai (Atasan Langsung): <strong className="text-on-surface">{structuralSuperiors?.pejabatPenilai.nama || 'Atasan Langsung'}</strong>
+              Pejabat Penilai: <strong className="text-on-surface">{structuralSuperiors?.pejabatPenilai.nama || 'Atasan Langsung'}</strong>
             </span>
             <span className="text-on-surface-variant flex items-center gap-1.5">
               <span className="material-symbols-outlined text-sm text-secondary">security</span>
@@ -512,17 +525,22 @@ export default function EvaluasiPerilakuKerjaPage() {
         </div>
 
         {/* Predikat Perilaku Summary */}
-        <div className="bg-gradient-to-br from-indigo-50/80 to-purple-50/50 rounded-3xl border border-indigo-200/80 p-6 shadow-xs flex flex-col justify-between gap-4">
+        <div className="bg-gradient-to-br from-indigo-50/80 via-white to-purple-50/50 rounded-3xl border border-indigo-200/80 p-6 shadow-xs flex flex-col justify-between gap-4">
           <div>
             <div className="flex items-center justify-between text-indigo-900 text-xs font-bold uppercase tracking-wider mb-2">
-              <span>Predikat Perilaku</span>
+              <span>Predikat Kumulatif Perilaku</span>
               <span className="material-symbols-outlined text-lg text-indigo-600">psychology_alt</span>
             </div>
-            <p className="text-2xl font-black text-indigo-950 mt-1">
-              {perilakuMetrics.predikat}
-            </p>
+            <div className="flex items-baseline gap-2">
+              <p className="text-2xl font-black text-indigo-950">
+                {perilakuMetrics.predikat}
+              </p>
+              <span className="text-xs font-mono font-bold text-indigo-700 bg-white px-2 py-0.5 rounded-lg border border-indigo-200">
+                Skor: {perilakuMetrics.avgScore} / 100
+              </span>
+            </div>
             <p className="text-xs text-indigo-800/80 mt-1">
-              Berdasarkan evaluasi kumulatif 7 nilai dasar BerAKHLAK.
+              Dihitung otomatis dari total 21 butir kuesioner rubrik BerAKHLAK.
             </p>
           </div>
 
@@ -544,162 +562,276 @@ export default function EvaluasiPerilakuKerjaPage() {
 
       </div>
 
-      {/* ── 7 Aspek BerAKHLAK Evaluation Cards ── */}
-      <div className="space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-2">
+      {/* ── Section Title & Action Bar ── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-2 pt-2">
+        <div>
           <h3 className="font-headline-sm text-base font-bold text-on-surface flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-primary" />
-            7 Aspek Penilaian Perilaku Kerja BerAKHLAK
+            7 Aspek Penilaian Perilaku Kerja BerAKHLAK (Kuesioner 21 Butir)
           </h3>
-          {activeTab === 'subordinate_assessment' && isSuperior && (
-            <div className="flex flex-wrap items-center gap-2.5">
-              <button
-                type="button"
-                onClick={() => {
-                  setKuesionerInitialAspekId(1)
-                  setIsKuesionerOpen(true)
-                }}
-                className="px-4 py-2.5 rounded-2xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
-              >
-                <span className="material-symbols-outlined text-base text-indigo-600">quiz</span>
-                Isi Kuesioner Rubrik Penilaian
-              </button>
-
-              <button
-                onClick={handleSaveAssessment}
-                disabled={isSaving}
-                className="px-5 py-2.5 rounded-2xl bg-primary text-white text-xs font-bold flex items-center gap-2 shadow-lg shadow-primary/25 hover:bg-primary/90 transition-all disabled:opacity-50 cursor-pointer"
-              >
-                {isSaving ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Menyimpan...
-                  </>
-                ) : (
-                  <>
-                    <span className="material-symbols-outlined text-base">save</span>
-                    Simpan Penilaian Atasan
-                  </>
-                )}
-              </button>
-            </div>
-          )}
+          <p className="text-xs text-on-surface-variant mt-0.5">
+            Rating tiap aspek dikalkulasikan secara otomatis berdasarkan opsi indikator yang dipilih atasan.
+          </p>
         </div>
 
-        {ASPEK_BERAKHLAK.map(aspek => {
+        {isEditable && (
+          <button
+            onClick={handleSaveAssessment}
+            disabled={isSaving}
+            className="px-6 py-2.5 rounded-2xl bg-primary text-white text-xs font-bold flex items-center gap-2 shadow-lg shadow-primary/25 hover:bg-primary/90 transition-all disabled:opacity-50 cursor-pointer self-start sm:self-auto shrink-0"
+          >
+            {isSaving ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                Menyimpan...
+              </>
+            ) : (
+              <>
+                <span className="material-symbols-outlined text-base">save</span>
+                Simpan Seluruh Penilaian
+              </>
+            )}
+          </button>
+        )}
+      </div>
+
+      {/* ── 7 Aspek BerAKHLAK Inline Questionnaire Cards ── */}
+      <div className="space-y-6">
+        {RUBRIK_PERILAKU_TENDIK.map(aspek => {
           const item = items[aspek.id] || {
             aspek_id: aspek.id,
-            ekspektasi_khusus: aspek.defaultEkspektasi,
+            ekspektasi_khusus: ASPEK_BERAKHLAK.find(a => a.id === aspek.id)?.defaultEkspektasi || '',
             rating: 'sesuai_ekspektasi' as RatingPerilaku,
             umpan_balik: '',
           }
-          const isEditable = activeTab === 'subordinate_assessment' && isSuperior
+
+          // Compute aspect score from its 3 indicators
+          const scores = aspek.indikatorList.map(ind => jawabanKuesioner[ind.id]?.skor || 85)
+          const aspekAvgScore = Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10
+          const computedRating = skorToRating(aspekAvgScore)
+          const ratingConfig = RATING_PERILAKU_CONFIG[computedRating]
 
           return (
             <div
               key={aspek.id}
-              className="bg-white rounded-3xl border border-outline-variant/30 p-6 shadow-xs hover:shadow-md transition-all space-y-5"
+              className="bg-white rounded-3xl border border-outline-variant/30 p-6 md:p-7 shadow-xs hover:shadow-md transition-all space-y-6"
             >
-              {/* Header Aspek */}
-              <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 pb-4 border-b border-outline-variant/20">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="w-7 h-7 rounded-xl bg-primary/10 text-primary font-black text-xs flex items-center justify-center">
-                      {aspek.id}
-                    </span>
-                    <h4 className="text-base font-bold text-on-surface">
-                      {aspek.nama}
-                    </h4>
+              {/* Aspect Card Header */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-outline-variant/20">
+                <div className="flex items-start gap-3.5">
+                  <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center font-black text-sm shrink-0 shadow-inner">
+                    {aspek.id}
                   </div>
-                  <p className="text-xs text-on-surface-variant pl-9">
-                    {aspek.tagline}
-                  </p>
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-base font-extrabold text-on-surface">
+                        {aspek.nama}
+                      </h4>
+                      <span className="material-symbols-outlined text-sm text-primary">
+                        {aspek.icon}
+                      </span>
+                    </div>
+                    <p className="text-xs text-on-surface-variant italic leading-relaxed">
+                      &ldquo;{aspek.definisi}&rdquo;
+                    </p>
+                  </div>
                 </div>
 
-                {/* Rating Selector / Display */}
-                <div className="self-start md:self-auto flex-shrink-0">
-                  <div className="flex items-center justify-between gap-2 mb-1.5 md:justify-end">
-                    <div className="text-[10px] font-bold text-outline uppercase tracking-wider">
-                      Rating Penilaian Atasan:
+                {/* Aspect Calculated Rating Info Card (Read-only, derived strictly from questionnaire) */}
+                <div className="flex items-center gap-3 self-start md:self-auto bg-slate-50 px-4 py-2.5 rounded-2xl border border-outline-variant/30 shrink-0">
+                  <div className="text-right">
+                    <div className="text-[10px] text-outline uppercase font-bold tracking-wider">
+                      Rata-rata Skor
                     </div>
-                    {kuesionerScores[aspek.id] && (
-                      <span className="px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 text-[10px] font-bold flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[12px] text-indigo-600">verified</span>
-                        Skor: {kuesionerScores[aspek.id].score}
-                      </span>
-                    )}
+                    <div className="text-base font-black font-mono text-primary leading-tight">
+                      {aspekAvgScore} <span className="text-[10px] text-outline font-normal">/ 100</span>
+                    </div>
                   </div>
-
-                  {isEditable ? (
-                    <div className="flex flex-wrap items-center gap-1.5 bg-surface-container-low p-1 rounded-2xl border border-outline-variant/30">
-                      {(['di_bawah_ekspektasi', 'sesuai_ekspektasi', 'di_atas_ekspektasi'] as RatingPerilaku[]).map(r => {
-                        const isSelected = item.rating === r
-                        const config = RATING_PERILAKU_CONFIG[r]
-                        return (
-                          <button
-                            key={r}
-                            onClick={() => handleRatingChange(aspek.id, r)}
-                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
-                              isSelected
-                                ? r === 'di_atas_ekspektasi'
-                                  ? 'bg-purple-600 text-white shadow-sm'
-                                  : r === 'sesuai_ekspektasi'
-                                  ? 'bg-emerald-600 text-white shadow-sm'
-                                  : 'bg-amber-600 text-white shadow-sm'
-                                : 'text-on-surface-variant hover:text-on-surface hover:bg-white/60'
-                            }`}
-                          >
-                            <span className="material-symbols-outlined text-[14px]">{config.icon}</span>
-                            <span>{config.label}</span>
-                          </button>
-                        )
-                      })}
-
-                      {/* Kuesioner Rubrik Button per Aspek */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setKuesionerInitialAspekId(aspek.id)
-                          setIsKuesionerOpen(true)
-                        }}
-                        className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shadow-2xs"
-                        title="Isi kuesioner rubrik 3 butir untuk aspek ini"
-                      >
-                        <span className="material-symbols-outlined text-[14px] text-indigo-600">quiz</span>
-                        <span>Kuesioner</span>
-                      </button>
+                  <div className="h-7 w-px bg-outline-variant/30" />
+                  <div>
+                    <div className="text-[10px] text-outline uppercase font-bold tracking-wider mb-0.5">
+                      Rating Kuesioner
                     </div>
-                  ) : (
-                    <div>
-                      {(() => {
-                        const config = RATING_PERILAKU_CONFIG[item.rating]
-                        return (
-                          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border shadow-2xs ${config.badgeClass}`}>
-                            <span className="material-symbols-outlined text-sm">{config.icon}</span>
-                            {config.label}
-                          </span>
-                        )
-                      })()}
-                    </div>
-                  )}
+                    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold border shadow-2xs ${ratingConfig.badgeClass}`}>
+                      <span className="material-symbols-outlined text-xs">{ratingConfig.icon}</span>
+                      {ratingConfig.label}
+                    </span>
+                  </div>
                 </div>
               </div>
 
-              {/* Panduan Perilaku (Standar ASN) */}
-              <div className="p-3.5 bg-surface-container-low/40 rounded-2xl border border-outline-variant/20 text-xs space-y-1.5">
-                <p className="font-bold text-on-surface flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-sm text-primary">rule</span>
-                  Panduan Perilaku Standar:
-                </p>
-                <ul className="list-disc list-inside space-y-1 text-on-surface-variant pl-2">
-                  {aspek.panduan.map((p, idx) => (
-                    <li key={idx}>{p}</li>
-                  ))}
-                </ul>
+              {/* Questionnaire Form: 3 Indicator Questions */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-on-surface uppercase tracking-wider flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-sm text-indigo-600">quiz</span>
+                    Kuesioner Rubrik Penilaian (3 Butir Indikator):
+                  </span>
+                  <span className="text-[11px] text-on-surface-variant italic hidden sm:inline">
+                    {isEditable ? '*Pilih deskripsi yang paling menggambarkan perilaku kerja pegawai' : '*Hasil penilaian rubrik oleh atasan'}
+                  </span>
+                </div>
+
+                {aspek.indikatorList.map(ind => {
+                  const currentAns = jawabanKuesioner[ind.id] || {
+                    level: 'sesuai_ekspektasi',
+                    skor: ind.sesuai.skorDefault,
+                  }
+
+                  return (
+                    <div
+                      key={ind.id}
+                      className="p-5 rounded-2xl bg-surface-container-lowest border border-outline-variant/30 space-y-3.5 shadow-2xs"
+                    >
+                      {/* Indicator Title & Score */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-outline-variant/15">
+                        <div className="flex items-start sm:items-center gap-2.5">
+                          <span className="px-2.5 py-1 rounded-xl bg-slate-900 text-white font-mono font-bold text-xs flex-shrink-0 shadow-2xs">
+                            Butir {ind.id}
+                          </span>
+                          <p className="text-xs font-bold text-on-surface leading-snug">
+                            {ind.kriteria}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-auto">
+                          <span className="text-[10px] text-on-surface-variant font-medium">Skor Pilihan:</span>
+                          <span className="text-xs font-mono font-black text-primary bg-primary/10 px-2 py-0.5 rounded-lg border border-primary/20">
+                            {currentAns.skor}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* 3 Option Rubric Radios */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-0.5">
+                        
+                        {/* Option 1: Di Bawah Ekspektasi */}
+                        <div
+                          onClick={() => {
+                            if (isEditable) {
+                              handleSelectIndikatorOption(
+                                ind.id,
+                                'di_bawah_ekspektasi',
+                                ind.diBawah.skorDefault,
+                                aspek.id
+                              )
+                            }
+                          }}
+                          className={`p-3.5 rounded-2xl border text-xs transition-all flex flex-col justify-between gap-2.5 ${
+                            isEditable ? 'cursor-pointer' : 'cursor-default'
+                          } ${
+                            currentAns.level === 'di_bawah_ekspektasi'
+                              ? 'bg-amber-50/90 border-amber-500 shadow-sm ring-2 ring-amber-500/30'
+                              : 'bg-white border-outline-variant/30 hover:border-amber-300 hover:bg-amber-50/20'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5">
+                              <span className={`material-symbols-outlined text-base ${
+                                currentAns.level === 'di_bawah_ekspektasi' ? 'text-amber-700' : 'text-slate-300'
+                              }`}>
+                                {currentAns.level === 'di_bawah_ekspektasi' ? 'radio_button_checked' : 'radio_button_unchecked'}
+                              </span>
+                              <span className="font-bold text-[11px] text-amber-900">
+                                Di Bawah Ekspektasi
+                              </span>
+                            </div>
+                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-100/70 text-amber-800 font-bold">
+                              0–75
+                            </span>
+                          </div>
+                          <p className="text-on-surface-variant leading-relaxed text-[11px]">
+                            {ind.diBawah.deskripsi}
+                          </p>
+                        </div>
+
+                        {/* Option 2: Sesuai Ekspektasi */}
+                        <div
+                          onClick={() => {
+                            if (isEditable) {
+                              handleSelectIndikatorOption(
+                                ind.id,
+                                'sesuai_ekspektasi',
+                                ind.sesuai.skorDefault,
+                                aspek.id
+                              )
+                            }
+                          }}
+                          className={`p-3.5 rounded-2xl border text-xs transition-all flex flex-col justify-between gap-2.5 ${
+                            isEditable ? 'cursor-pointer' : 'cursor-default'
+                          } ${
+                            currentAns.level === 'sesuai_ekspektasi'
+                              ? 'bg-emerald-50/90 border-emerald-500 shadow-sm ring-2 ring-emerald-500/30'
+                              : 'bg-white border-outline-variant/30 hover:border-emerald-300 hover:bg-emerald-50/20'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5">
+                              <span className={`material-symbols-outlined text-base ${
+                                currentAns.level === 'sesuai_ekspektasi' ? 'text-emerald-700' : 'text-slate-300'
+                              }`}>
+                                {currentAns.level === 'sesuai_ekspektasi' ? 'radio_button_checked' : 'radio_button_unchecked'}
+                              </span>
+                              <span className="font-bold text-[11px] text-emerald-900">
+                                Sesuai Ekspektasi
+                              </span>
+                            </div>
+                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-100/70 text-emerald-800 font-bold">
+                              76–90
+                            </span>
+                          </div>
+                          <p className="text-on-surface-variant leading-relaxed text-[11px]">
+                            {ind.sesuai.deskripsi}
+                          </p>
+                        </div>
+
+                        {/* Option 3: Di Atas Ekspektasi */}
+                        <div
+                          onClick={() => {
+                            if (isEditable) {
+                              handleSelectIndikatorOption(
+                                ind.id,
+                                'di_atas_ekspektasi',
+                                ind.diAtas.skorDefault,
+                                aspek.id
+                              )
+                            }
+                          }}
+                          className={`p-3.5 rounded-2xl border text-xs transition-all flex flex-col justify-between gap-2.5 ${
+                            isEditable ? 'cursor-pointer' : 'cursor-default'
+                          } ${
+                            currentAns.level === 'di_atas_ekspektasi'
+                              ? 'bg-purple-50/90 border-purple-500 shadow-sm ring-2 ring-purple-500/30'
+                              : 'bg-white border-outline-variant/30 hover:border-purple-300 hover:bg-purple-50/20'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5">
+                              <span className={`material-symbols-outlined text-base ${
+                                currentAns.level === 'di_atas_ekspektasi' ? 'text-purple-700' : 'text-slate-300'
+                              }`}>
+                                {currentAns.level === 'di_atas_ekspektasi' ? 'radio_button_checked' : 'radio_button_unchecked'}
+                              </span>
+                              <span className="font-bold text-[11px] text-purple-900">
+                                Di Atas Ekspektasi
+                              </span>
+                            </div>
+                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-purple-100/70 text-purple-800 font-bold">
+                              91–100
+                            </span>
+                          </div>
+                          <p className="text-on-surface-variant leading-relaxed text-[11px]">
+                            {ind.diAtas.deskripsi}
+                          </p>
+                        </div>
+
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
 
               {/* Form Ekspektasi Khusus & Umpan Balik Berkala Pimpinan */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-outline-variant/20">
                 {/* Ekspektasi Khusus Pimpinan */}
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold text-on-surface flex items-center gap-1.5">
@@ -716,17 +848,30 @@ export default function EvaluasiPerilakuKerjaPage() {
                     />
                   ) : (
                     <div className="p-3 bg-indigo-50/50 border border-indigo-200/50 rounded-2xl text-xs text-indigo-950 italic leading-relaxed min-h-[76px]">
-                      "{item.ekspektasi_khusus || aspek.defaultEkspektasi}"
+                      &ldquo;{item.ekspektasi_khusus || 'Lebih mengutamakan pelayanan dan kepentingan institusi.'}&rdquo;
                     </div>
                   )}
                 </div>
 
-                {/* Umpan Balik Berkala Berkelanjutan Berdasarkan Bukti Dukung */}
+                {/* Umpan Balik Berkala Berdasarkan Bukti Dukung (Atasan) */}
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-bold text-on-surface flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-sm text-amber-600">forum</span>
-                    Umpan Balik Berkala Berdasarkan Bukti Dukung (Atasan):
-                  </label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-on-surface flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-sm text-amber-600">forum</span>
+                      Umpan Balik Berkala (Atasan):
+                    </label>
+                    {isEditable && (
+                      <button
+                        type="button"
+                        onClick={() => handleApplyRecommendedFeedback(aspek.id)}
+                        className="text-[11px] text-indigo-700 hover:text-indigo-900 font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                        title="Terapkan narasi rekomendasi otomatis berdasarkan opsi kuesioner terpilih"
+                      >
+                        <span className="material-symbols-outlined text-xs text-indigo-600">auto_fix_high</span>
+                        Gunakan Narasi Kuesioner
+                      </button>
+                    )}
+                  </div>
                   {isEditable ? (
                     <textarea
                       rows={3}
@@ -737,7 +882,7 @@ export default function EvaluasiPerilakuKerjaPage() {
                     />
                   ) : (
                     <div className="p-3 bg-amber-50/50 border border-amber-200/50 rounded-2xl text-xs text-amber-950 italic leading-relaxed min-h-[76px]">
-                      "{item.umpan_balik || 'Menunjukkan komitmen dan integritas yang konsisten dalam bekerja.'}"
+                      &ldquo;{item.umpan_balik || 'Menunjukkan komitmen dan integritas yang konsisten dalam bekerja.'}&rdquo;
                     </div>
                   )}
                 </div>
@@ -746,52 +891,31 @@ export default function EvaluasiPerilakuKerjaPage() {
             </div>
           )
         })}
-
-        {/* Bottom Save Action */}
-        {activeTab === 'subordinate_assessment' && isSuperior && (
-          <div className="flex justify-end p-4 bg-white rounded-3xl border border-outline-variant/30 shadow-xs">
-            <button
-              onClick={handleSaveAssessment}
-              disabled={isSaving}
-              className="px-8 py-3 rounded-2xl bg-primary text-white text-xs font-bold flex items-center gap-2 shadow-lg shadow-primary/25 hover:bg-primary/90 transition-all disabled:opacity-50 cursor-pointer"
-            >
-              {isSaving ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  Menyimpan Penilaian...
-                </>
-              ) : (
-                <>
-                  <span className="material-symbols-outlined text-base">save</span>
-                  Simpan Seluruh Penilaian Perilaku Atasan
-                </>
-              )}
-            </button>
-          </div>
-        )}
-
       </div>
 
-      {/* ── Kuesioner Rubrik Penilaian Perilaku Modal ── */}
-      <KuesionerPerilakuModal
-        isOpen={isKuesionerOpen}
-        onClose={() => setIsKuesionerOpen(false)}
-        targetPegawai={
-          currentTargetUser
-            ? {
-                id: currentTargetUser.id,
-                nama: currentTargetUser.pegawai?.nama_lengkap || currentTargetUser.email || 'Pegawai',
-                nip: currentTargetUser.pegawai?.nip,
-                jabatan: currentTargetUser.pegawai?.jabatan || currentTargetUser.role,
-              }
-            : null
-        }
-        periodeId={periode?.id || '2026'}
-        initialAspekId={kuesionerInitialAspekId}
-        onApplyResult={handleApplyKuesionerResult}
-      />
+      {/* ── Bottom Save Action ── */}
+      {isEditable && (
+        <div className="flex justify-end p-5 bg-white rounded-3xl border border-outline-variant/30 shadow-xs">
+          <button
+            onClick={handleSaveAssessment}
+            disabled={isSaving}
+            className="px-8 py-3 rounded-2xl bg-primary text-white text-xs font-bold flex items-center gap-2 shadow-lg shadow-primary/25 hover:bg-primary/90 transition-all disabled:opacity-50 cursor-pointer"
+          >
+            {isSaving ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                Menyimpan Penilaian...
+              </>
+            ) : (
+              <>
+                <span className="material-symbols-outlined text-base">save</span>
+                Simpan Seluruh Penilaian Perilaku Atasan
+              </>
+            )}
+          </button>
+        </div>
+      )}
 
     </div>
   )
 }
-
