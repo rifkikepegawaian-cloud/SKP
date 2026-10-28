@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { MasterIKU } from '@/lib/types'
+import { getRektorIKUFormula } from '@/lib/skpFormulas'
 import { parseExcelToIKU, IKUImportRow, ikuRowsToInsert } from '@/lib/excel'
 
 type ModalMode = 'closed' | 'add' | 'edit' | 'import' | 'delete'
@@ -16,6 +17,8 @@ interface IKUForm {
   nama_output: string
   target_default?: string
   satuan_default?: string
+  sasaran_kinerja?: string
+  indikator_kinerja_individu?: string
 }
 
 const emptyForm: IKUForm = {
@@ -26,7 +29,9 @@ const emptyForm: IKUForm = {
   kode_output: '', 
   nama_output: '',
   target_default: '100',
-  satuan_default: '%'
+  satuan_default: '%',
+  sasaran_kinerja: '',
+  indikator_kinerja_individu: '',
 }
 
 export default function ManajemenIKUPage() {
@@ -113,8 +118,34 @@ export default function ManajemenIKUPage() {
   // ── CRUD Handlers ──
   const handleSave = async () => {
     setSaving(true)
+    const cleanForm = { ...form }
+
+    const safeOp = async (isInsert: boolean) => {
+      let err: any = null
+      if (isInsert) {
+        const res = await supabase.from('master_iku').insert([cleanForm])
+        err = res.error
+      } else {
+        const res = await supabase.from('master_iku').update(cleanForm).eq('id', editId)
+        err = res.error
+      }
+
+      if (err && (err.message?.includes('sasaran_kinerja') || err.message?.includes('indikator_kinerja_individu'))) {
+        delete cleanForm.sasaran_kinerja
+        delete cleanForm.indikator_kinerja_individu
+        if (isInsert) {
+          const res = await supabase.from('master_iku').insert([cleanForm])
+          err = res.error
+        } else {
+          const res = await supabase.from('master_iku').update(cleanForm).eq('id', editId)
+          err = res.error
+        }
+      }
+      return err
+    }
+
     if (modalMode === 'add') {
-      const { error } = await supabase.from('master_iku').insert([form])
+      const error = await safeOp(true)
       if (error) {
         showToast('Gagal menambah IKU: ' + error.message, 'error')
       } else {
@@ -124,7 +155,7 @@ export default function ManajemenIKUPage() {
         fetchData()
       }
     } else if (modalMode === 'edit' && editId) {
-      const { error } = await supabase.from('master_iku').update(form).eq('id', editId)
+      const error = await safeOp(false)
       if (error) {
         showToast('Gagal mengubah IKU: ' + error.message, 'error')
       } else {
@@ -154,6 +185,7 @@ export default function ManajemenIKUPage() {
   }
 
   const openEdit = (iku: MasterIKU) => {
+    const defaultFormula = getRektorIKUFormula(iku.kode_iku, iku.nama_iku)
     setForm({
       kode_iku: iku.kode_iku,
       nama_iku: iku.nama_iku,
@@ -163,6 +195,8 @@ export default function ManajemenIKUPage() {
       nama_output: iku.nama_output,
       target_default: iku.target_default || (iku.kode_iku === '18' ? '1:50' : '100'),
       satuan_default: iku.satuan_default || (iku.kode_iku === '18' ? 'Rasio' : '%'),
+      sasaran_kinerja: iku.sasaran_kinerja || defaultFormula.sasaranKinerja,
+      indikator_kinerja_individu: iku.indikator_kinerja_individu || defaultFormula.indikatorKinerjaIndividu,
     })
     setEditId(iku.id)
     setModalMode('edit')
@@ -578,6 +612,57 @@ export default function ManajemenIKUPage() {
                     <option value="Laporan" />
                     <option value="Mahasiswa" />
                   </datalist>
+                </div>
+
+                {/* Sasaran Kinerja & Indikator Kinerja Individu (PermenPAN-RB No. 6/2022) */}
+                <div className="col-span-2 bg-primary/5 p-4 rounded-2xl border border-primary/20 space-y-3.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-primary uppercase tracking-wider flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-sm">verified</span>
+                      Kaidah PermenPAN-RB No. 6/2022 (Rektor)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const formula = getRektorIKUFormula(form.kode_iku, form.nama_iku)
+                        setForm(prev => ({
+                          ...prev,
+                          sasaran_kinerja: formula.sasaranKinerja,
+                          indikator_kinerja_individu: formula.indikatorKinerjaIndividu,
+                        }))
+                      }}
+                      className="text-[11px] font-bold text-primary hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-xs">auto_fix_high</span>
+                      Gunakan Rekomendasi Baku
+                    </button>
+                  </div>
+
+                  <div>
+                    <label className="block font-label-md text-label-md text-on-surface-variant mb-1 font-semibold">
+                      Sasaran Kinerja Rektor (Awalan &quot;Me...&quot;)
+                    </label>
+                    <textarea
+                      rows={2}
+                      placeholder="Contoh: Meningkatnya rasio dosen terhadap mahasiswa (FSR) sesuai standar mutu"
+                      value={form.sasaran_kinerja || ''}
+                      onChange={e => setForm(prev => ({ ...prev, sasaran_kinerja: e.target.value }))}
+                      className="w-full bg-surface-container-lowest border border-outline-variant/50 rounded-xl p-3 text-xs outline-none focus:ring-2 focus:ring-primary/20 transition-all leading-relaxed"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-label-md text-label-md text-on-surface-variant mb-1 font-semibold">
+                      Indikator Kinerja Individu (IKI)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Contoh: Skor Faculty Student Ratio (FSR) institusi"
+                      value={form.indikator_kinerja_individu || ''}
+                      onChange={e => setForm(prev => ({ ...prev, indikator_kinerja_individu: e.target.value }))}
+                      className="w-full bg-surface-container-lowest border border-outline-variant/50 rounded-xl px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                    />
+                  </div>
                 </div>
               </div>
 

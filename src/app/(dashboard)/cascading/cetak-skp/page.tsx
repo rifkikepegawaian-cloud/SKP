@@ -423,13 +423,18 @@ export default function CetakDokumenSKPPage() {
                 ) : (
                   tasksUtama.map((task, idx) => (
                     <React.Fragment key={task.id || idx}>
-                      {/* Baris 1: Nomor dan Nama Tugas */}
+                      {/* Baris 1: Nomor dan Sasaran Kinerja */}
                       <tr className="border-b border-black">
                         <td className="w-8 p-1.5 text-center align-top border-r border-black font-bold">
                           {idx + 1}
                         </td>
                         <td className="p-1.5 align-top font-semibold leading-relaxed">
-                          {task.title}
+                          <p className="font-bold">{task.sasaranKinerja || task.title}</p>
+                          {task.sasaranKinerja && task.title && task.sasaranKinerja !== task.title && (
+                            <p className="text-[10px] text-neutral-600 font-normal italic">
+                              Lingkup: {task.title}
+                            </p>
+                          )}
                         </td>
                       </tr>
 
@@ -441,8 +446,10 @@ export default function CetakDokumenSKPPage() {
                             Ukuran keberhasilan/ Indikator Kinerja Individu, Target, dan Perspektif :
                           </p>
                           <p className="text-[11px] leading-relaxed">
-                            {task.indikatorKinerja ||
-                              `Terprosesnya ${task.title} sebanyak ${task.target || 100} ${task.satuan || '%'} diproses 100%`}
+                            {task.indikatorKinerjaIndividu
+                              ? `${task.indikatorKinerjaIndividu} sebanyak ${task.target || 100} ${task.satuan || '%'}`
+                              : (task.indikatorKinerja ||
+                                `Terprosesnya ${task.title} sebanyak ${task.target || 100} ${task.satuan || '%'} diproses 100%`)}
                           </p>
                         </td>
                       </tr>
@@ -467,7 +474,12 @@ export default function CetakDokumenSKPPage() {
                           {idx + 1}
                         </td>
                         <td className="p-1.5 align-top font-semibold leading-relaxed">
-                          {task.title}
+                          <p className="font-bold">{task.sasaranKinerja || task.title}</p>
+                          {task.sasaranKinerja && task.title && task.sasaranKinerja !== task.title && (
+                            <p className="text-[10px] text-neutral-600 font-normal italic">
+                              Lingkup: {task.title}
+                            </p>
+                          )}
                         </td>
                       </tr>
                       <tr className="border-b border-black">
@@ -477,8 +489,10 @@ export default function CetakDokumenSKPPage() {
                             Ukuran keberhasilan/ Indikator Kinerja Individu, Target, dan Perspektif :
                           </p>
                           <p className="text-[11px] leading-relaxed">
-                            {task.indikatorKinerja ||
-                              `Terprosesnya ${task.title} sebanyak ${task.target || 100} ${task.satuan || '%'} diproses 100%`}
+                            {task.indikatorKinerjaIndividu
+                              ? `${task.indikatorKinerjaIndividu} sebanyak ${task.target || 100} ${task.satuan || '%'}`
+                              : (task.indikatorKinerja ||
+                                `Terprosesnya ${task.title} sebanyak ${task.target || 100} ${task.satuan || '%'} diproses 100%`)}
                           </p>
                         </td>
                       </tr>

@@ -19,6 +19,7 @@ import {
   CascadingLaporanKerja,
 } from '@/lib/types'
 import { getStructuralSubordinates } from '@/lib/skpHierarchy'
+import { generateCascadingFormula, getRektorIKUFormula } from '@/lib/skpFormulas'
 import TargetSplitterModal, { AllocationRow } from '@/components/cascading/TargetSplitterModal'
 import SanggahanModal from '@/components/cascading/SanggahanModal'
 import PelaporanCapaianModal from '@/components/cascading/PelaporanCapaianModal'
@@ -50,6 +51,8 @@ export interface SplitterConfig {
   subordinatesList?: User[]
   parentRecord: any
   selectedOutput?: { id?: string; kode_output?: string; nama_output: string; nama_kegiatan?: string }
+  currentCascadingLevel?: 'sukpa' | 'unit' | 'manajer' | 'spv' | 'staff'
+  kodeIku?: string
 }
 
 interface CascadingContextType {
@@ -78,6 +81,8 @@ interface CascadingContextType {
     parentTitle?: string
     isDirectSync?: boolean
     indikatorKinerja?: string
+    sasaranKinerja?: string
+    indikatorKinerjaIndividu?: string
     jenisKinerja?: 'utama' | 'tambahan'
     assignedByUser?: User | null
     capaian_realisasi?: number
@@ -384,19 +389,24 @@ export function CascadingProvider({ children }: { children: React.ReactNode }) {
   const agreedTasksForSKP = useMemo(() => {
     // 1. Rektor: Berisi 32 IKU Universitas (Grouped by unique kode_iku)
     if (role === 'rektor') {
-      return groupedIkuList.map((iku, idx) => ({
-        id: iku.id || `rektor-iku-${idx}`,
-        title: `Pencapaian Indikator Kinerja Utama [IKU ${iku.kode_iku}] ${iku.nama_iku}`,
-        target: iku.target_default || '100',
-        satuan: iku.satuan_default || '%',
-        parentTitle: 'Sasaran Strategis Universitas Diponegoro',
-        isDirectSync: false,
-        indikatorKinerja: `Pencapaian target ${iku.nama_iku} sebesar ${iku.target_default || '100'} ${iku.satuan_default || '%'} diproses 100%`,
-        jenisKinerja: 'utama' as const,
-        assignedByUser: null,
-        capaian_realisasi: 0,
-        capaian_approved: 0,
-      }))
+      return groupedIkuList.map((iku, idx) => {
+        const formula = getRektorIKUFormula(iku.kode_iku, iku.nama_iku)
+        return {
+          id: iku.id || `rektor-iku-${idx}`,
+          title: `Pencapaian Indikator Kinerja Utama [IKU ${iku.kode_iku}] ${iku.nama_iku}`,
+          target: iku.target_default || '100',
+          satuan: iku.satuan_default || '%',
+          parentTitle: 'Sasaran Strategis Universitas Diponegoro',
+          isDirectSync: false,
+          indikatorKinerja: `Pencapaian target ${iku.nama_iku} sebesar ${iku.target_default || '100'} ${iku.satuan_default || '%'} diproses 100%`,
+          sasaranKinerja: formula.sasaranKinerjaRektor,
+          indikatorKinerjaIndividu: formula.ikiRektor,
+          jenisKinerja: 'utama' as const,
+          assignedByUser: null,
+          capaian_realisasi: 0,
+          capaian_approved: 0,
+        }
+      })
     }
 
     // 2. Roles lainnya: Berdasarkan hierarki tugas cascading yang telah disepakati (status = 'agreed')
@@ -434,6 +444,17 @@ export function CascadingProvider({ children }: { children: React.ReactNode }) {
           indikatorKinerja = `Terprosesnya ${title} sebanyak ${t.target} ${t.satuan} diproses 100%`
         }
 
+        const fallbackFormula = generateCascadingFormula({
+          level: (role === 'pimpinan_sukpa' ? 'sukpa' : role === 'pimpinan_unit' ? 'unit' : role === 'manajer' ? 'manajer' : role === 'supervisor' ? 'spv' : 'staff'),
+          parentTitle,
+          taskName: title,
+          satuan: t.satuan,
+          kodeIku: t.iku?.kode_iku || t.parent_sukpa?.iku?.kode_iku,
+        })
+
+        const sasaranKinerja = t.sasaran_kinerja || fallbackFormula.sasaranKinerja
+        const indikatorKinerjaIndividu = t.indikator_kinerja_individu || fallbackFormula.indikatorKinerjaIndividu
+
         return {
           id: t.id,
           title,
@@ -442,6 +463,8 @@ export function CascadingProvider({ children }: { children: React.ReactNode }) {
           parentTitle,
           isDirectSync: t.is_direct_sync,
           indikatorKinerja,
+          sasaranKinerja,
+          indikatorKinerjaIndividu,
           jenisKinerja: (t.jenis_kinerja || 'utama') as 'utama' | 'tambahan',
           assignedByUser: t.assigned_by_user || null,
           capaian_realisasi: t.capaian_realisasi || 0,
@@ -488,6 +511,8 @@ export function CascadingProvider({ children }: { children: React.ReactNode }) {
         targetRoleLabel: 'Pimpinan SUKPA',
         subordinatesList: subordinates.length > 0 ? subordinates : subsList,
         parentRecord: parent,
+        currentCascadingLevel: 'sukpa',
+        kodeIku: parent.kode_iku,
       })
     } else if (type === 'iku_unit') {
       const kodeIku = parent.iku?.kode_iku || parent.parent_sukpa?.iku?.kode_iku || ''
@@ -502,6 +527,8 @@ export function CascadingProvider({ children }: { children: React.ReactNode }) {
         targetRoleLabel,
         subordinatesList: subsList,
         parentRecord: parent,
+        currentCascadingLevel: 'unit',
+        kodeIku,
       })
     } else if (type === 'output') {
       const kodeIku = parent.parent_sukpa?.iku?.kode_iku
@@ -522,6 +549,8 @@ export function CascadingProvider({ children }: { children: React.ReactNode }) {
         targetRoleLabel,
         subordinatesList: subsList,
         parentRecord: parent,
+        currentCascadingLevel: 'manajer',
+        kodeIku,
       })
     } else if (type === 'uraian') {
       const parentIkuName = parent.parent_unit?.parent_sukpa?.iku?.nama_iku
@@ -546,6 +575,7 @@ export function CascadingProvider({ children }: { children: React.ReactNode }) {
         filterUnitEs2: targetUnitEs2,
         subordinatesList: subsList,
         parentRecord: parent,
+        currentCascadingLevel: 'spv',
       })
     } else if (type === 'sub_uraian') {
       setSplitterConfig({
@@ -569,6 +599,7 @@ export function CascadingProvider({ children }: { children: React.ReactNode }) {
         filterUnitEs2: targetUnitEs2,
         subordinatesList: subsList,
         parentRecord: parent,
+        currentCascadingLevel: 'staff',
       })
     }
 
@@ -625,6 +656,8 @@ export function CascadingProvider({ children }: { children: React.ReactNode }) {
       subordinatesList: subsList,
       parentRecord: parentUnitIku,
       selectedOutput: outputItem,
+      currentCascadingLevel: 'manajer',
+      kodeIku,
     })
 
     setIsSplitterOpen(true)
@@ -639,6 +672,29 @@ export function CascadingProvider({ children }: { children: React.ReactNode }) {
     const supabase = createClient()
     const { parentRecord } = splitterConfig
     const effectiveSatuan = updatedParent?.satuan || splitterConfig.satuan
+
+    const safeInsert = async (table: string, records: any[]) => {
+      const { error } = await supabase.from(table).insert(records)
+      if (error) {
+        if (
+          error.message?.includes('sasaran_kinerja') ||
+          error.message?.includes('indikator_kinerja_individu') ||
+          error.code === 'PGRST204'
+        ) {
+          console.warn(`[SafeInsert] Retrying insert into ${table} without new columns:`, error.message)
+          const fallbackRecords = records.map((r: any) => {
+            const copy = { ...r }
+            delete copy.sasaran_kinerja
+            delete copy.indikator_kinerja_individu
+            return copy
+          })
+          const { error: retryError } = await supabase.from(table).insert(fallbackRecords)
+          if (retryError) throw retryError
+          return
+        }
+        throw error
+      }
+    }
 
     try {
       if (role === 'rektor') {
@@ -656,73 +712,126 @@ export function CascadingProvider({ children }: { children: React.ReactNode }) {
           }
         }
 
-        const records = allocations.map(a => ({
-          periode_id: periode.id,
-          iku_id: parentRecord.id,
-          assigned_by: user.id,
-          sukpa_user_id: a.userId,
-          target: a.target,
-          satuan: effectiveSatuan,
-          is_direct_sync: isDirectSync,
-          status: 'assigned' as CascadingStatus,
-        }))
-        const { error } = await supabase.from('cascading_iku_sukpa').insert(records)
-        if (error) throw error
+        const records = allocations.map(a => {
+          const formula = generateCascadingFormula({
+            level: 'sukpa',
+            parentTitle: parentRecord.nama_iku || parentRecord.kode_iku,
+            taskName: a.namaTugas,
+            satuan: effectiveSatuan,
+            kodeIku: parentRecord.kode_iku,
+          })
+          return {
+            periode_id: periode.id,
+            iku_id: parentRecord.id,
+            assigned_by: user.id,
+            sukpa_user_id: a.userId,
+            target: a.target,
+            satuan: effectiveSatuan,
+            is_direct_sync: isDirectSync,
+            status: 'assigned' as CascadingStatus,
+            sasaran_kinerja: a.sasaranKinerja?.trim() || formula.sasaranKinerja,
+            indikator_kinerja_individu: a.indikatorKinerjaIndividu?.trim() || formula.indikatorKinerjaIndividu,
+          }
+        })
+        await safeInsert('cascading_iku_sukpa', records)
       } else if (role === 'pimpinan_sukpa') {
-        const records = allocations.map(a => ({
-          parent_sukpa_id: parentRecord.id,
-          periode_id: periode.id,
-          assigned_by: user.id,
-          unit_user_id: a.userId,
-          target: a.target,
-          satuan: effectiveSatuan,
-          is_direct_sync: isDirectSync,
-          status: 'assigned' as CascadingStatus,
-        }))
-        const { error } = await supabase.from('cascading_iku_unit').insert(records)
-        if (error) throw error
+        const records = allocations.map(a => {
+          const formula = generateCascadingFormula({
+            level: 'unit',
+            parentTitle: parentRecord.nama_iku || parentRecord.parent_sukpa?.nama_iku,
+            taskName: a.namaTugas,
+            satuan: effectiveSatuan,
+            kodeIku: splitterConfig.kodeIku,
+          })
+          return {
+            parent_sukpa_id: parentRecord.id,
+            periode_id: periode.id,
+            assigned_by: user.id,
+            unit_user_id: a.userId,
+            target: a.target,
+            satuan: effectiveSatuan,
+            is_direct_sync: isDirectSync,
+            status: 'assigned' as CascadingStatus,
+            sasaran_kinerja: a.sasaranKinerja?.trim() || formula.sasaranKinerja,
+            indikator_kinerja_individu: a.indikatorKinerjaIndividu?.trim() || formula.indikatorKinerjaIndividu,
+          }
+        })
+        await safeInsert('cascading_iku_unit', records)
       } else if (role === 'pimpinan_unit') {
         const outItem = splitterConfig.selectedOutput
-        const records = allocations.map(a => ({
-          parent_unit_id: parentRecord.id,
-          periode_id: periode.id,
-          assigned_by: user.id,
-          manajer_user_id: a.userId,
-          kode_output: outItem?.kode_output || null,
-          nama_output: outItem?.nama_output || a.namaTugas || 'Output Kinerja',
-          target: String(a.target),
-          satuan: a.satuan || effectiveSatuan,
-          is_direct_sync: isDirectSync,
-          status: 'assigned' as CascadingStatus,
-        }))
-        const { error } = await supabase.from('cascading_output_manajer').insert(records)
-        if (error) throw error
+        const records = allocations.map(a => {
+          const outputName = outItem?.nama_output || a.namaTugas || 'Output Kinerja'
+          const formula = generateCascadingFormula({
+            level: 'manajer',
+            parentTitle: parentRecord.nama_iku || parentRecord.kode_iku,
+            taskName: outputName,
+            satuan: a.satuan || effectiveSatuan,
+            kodeIku: splitterConfig.kodeIku,
+          })
+          return {
+            parent_unit_id: parentRecord.id,
+            periode_id: periode.id,
+            assigned_by: user.id,
+            manajer_user_id: a.userId,
+            kode_output: outItem?.kode_output || null,
+            nama_output: outputName,
+            target: String(a.target),
+            satuan: a.satuan || effectiveSatuan,
+            is_direct_sync: isDirectSync,
+            status: 'assigned' as CascadingStatus,
+            sasaran_kinerja: a.sasaranKinerja?.trim() || formula.sasaranKinerja,
+            indikator_kinerja_individu: a.indikatorKinerjaIndividu?.trim() || formula.indikatorKinerjaIndividu,
+          }
+        })
+        await safeInsert('cascading_output_manajer', records)
       } else if (role === 'manajer') {
-        const records = allocations.map(a => ({
-          parent_output_id: parentRecord.id,
-          periode_id: periode.id,
-          assigned_by: user.id,
-          spv_user_id: a.userId,
-          nama_uraian: a.namaTugas || 'Uraian Tugas',
-          target: String(a.target),
-          satuan: a.satuan || effectiveSatuan || 'Dokumen',
-          status: 'assigned' as CascadingStatus,
-        }))
-        const { error } = await supabase.from('cascading_uraian_spv').insert(records)
-        if (error) throw error
+        const records = allocations.map(a => {
+          const taskName = a.namaTugas || 'Uraian Tugas'
+          const formula = generateCascadingFormula({
+            level: 'spv',
+            parentTitle: parentRecord.nama_output || 'Output Manajer',
+            taskName: taskName,
+            satuan: a.satuan || effectiveSatuan || 'Dokumen',
+            kodeIku: splitterConfig.kodeIku,
+          })
+          return {
+            parent_output_id: parentRecord.id,
+            periode_id: periode.id,
+            assigned_by: user.id,
+            spv_user_id: a.userId,
+            nama_uraian: taskName,
+            target: String(a.target),
+            satuan: a.satuan || effectiveSatuan || 'Dokumen',
+            status: 'assigned' as CascadingStatus,
+            sasaran_kinerja: a.sasaranKinerja?.trim() || formula.sasaranKinerja,
+            indikator_kinerja_individu: a.indikatorKinerjaIndividu?.trim() || formula.indikatorKinerjaIndividu,
+          }
+        })
+        await safeInsert('cascading_uraian_spv', records)
       } else if (role === 'supervisor') {
-        const records = allocations.map(a => ({
-          parent_uraian_id: parentRecord.id,
-          periode_id: periode.id,
-          assigned_by: user.id,
-          staff_user_id: a.userId,
-          nama_sub_uraian: a.namaTugas || 'Sub-Uraian Tugas',
-          target: String(a.target),
-          satuan: a.satuan || effectiveSatuan || 'Berkas',
-          status: 'assigned' as CascadingStatus,
-        }))
-        const { error } = await supabase.from('cascading_sub_uraian_staff').insert(records)
-        if (error) throw error
+        const records = allocations.map(a => {
+          const taskName = a.namaTugas || 'Sub-Uraian Tugas'
+          const formula = generateCascadingFormula({
+            level: 'staff',
+            parentTitle: parentRecord.nama_uraian || 'Uraian Tugas',
+            taskName: taskName,
+            satuan: a.satuan || effectiveSatuan || 'Berkas',
+            kodeIku: splitterConfig.kodeIku,
+          })
+          return {
+            parent_uraian_id: parentRecord.id,
+            periode_id: periode.id,
+            assigned_by: user.id,
+            staff_user_id: a.userId,
+            nama_sub_uraian: taskName,
+            target: String(a.target),
+            satuan: a.satuan || effectiveSatuan || 'Berkas',
+            status: 'assigned' as CascadingStatus,
+            sasaran_kinerja: a.sasaranKinerja?.trim() || formula.sasaranKinerja,
+            indikator_kinerja_individu: a.indikatorKinerjaIndividu?.trim() || formula.indikatorKinerjaIndividu,
+          }
+        })
+        await safeInsert('cascading_sub_uraian_staff', records)
       }
 
       showToast('Penugasan berhasil disimpan dan dikirimkan ke bawahan!')
@@ -1029,6 +1138,8 @@ export function CascadingProvider({ children }: { children: React.ReactNode }) {
           filterUnitEs2={splitterConfig.filterUnitEs2}
           allowEditParentTarget={splitterConfig.allowEditParentTarget}
           subordinates={splitterConfig.subordinatesList || subordinates}
+          currentCascadingLevel={splitterConfig.currentCascadingLevel}
+          kodeIku={splitterConfig.kodeIku}
           onSave={handleSaveAllocation}
         />
       )}

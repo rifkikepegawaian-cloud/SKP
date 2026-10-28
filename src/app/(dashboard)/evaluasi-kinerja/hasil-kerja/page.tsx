@@ -11,6 +11,8 @@ export type KategoriHasilKerja = 'dibawah_ekspektasi' | 'sesuai_ekspektasi' | 'd
 export interface ItemEvaluasiHasilKerja {
   id: string
   title: string
+  sasaranKinerja?: string
+  indikatorKinerjaIndividu?: string
   parentTitle?: string
   indikatorKinerja?: string
   jenisKinerja: 'utama' | 'tambahan'
@@ -203,8 +205,10 @@ export default function EvaluasiHasilKerjaPage() {
       return {
         id: task.id,
         title: task.title,
+        sasaranKinerja: task.sasaranKinerja,
+        indikatorKinerjaIndividu: task.indikatorKinerjaIndividu,
         parentTitle: task.parentTitle,
-        indikatorKinerja: task.indikatorKinerja,
+        indikatorKinerja: task.indikatorKinerjaIndividu || task.indikatorKinerja,
         jenisKinerja: task.jenisKinerja || 'utama',
         target: targetNum,
         satuan,
@@ -613,8 +617,13 @@ export default function EvaluasiHasilKerjaPage() {
                       )}
                     </div>
                     <h3 className="text-sm font-bold text-on-surface leading-snug">
-                      {item.title}
+                      {item.sasaranKinerja || item.title}
                     </h3>
+                    {item.sasaranKinerja && item.title && item.sasaranKinerja !== item.title && (
+                      <p className="text-[11px] text-on-surface-variant italic">
+                        Lingkup Tugas: {item.title}
+                      </p>
+                    )}
                   </div>
 
                   {/* Status Badge */}
@@ -664,10 +673,10 @@ export default function EvaluasiHasilKerjaPage() {
                 </div>
 
                 {/* Indikator Kinerja & Bukti Dukung */}
-                {item.indikatorKinerja && (
+                {(item.indikatorKinerjaIndividu || item.indikatorKinerja) && (
                   <div className="text-xs text-on-surface-variant">
-                    <span className="font-semibold text-on-surface">Ukuran Keberhasilan / Indikator Kinerja:</span>{' '}
-                    <span>{item.indikatorKinerja}</span>
+                    <span className="font-semibold text-on-surface">Ukuran Keberhasilan / Indikator Kinerja Individu (IKI):</span>{' '}
+                    <span>{item.indikatorKinerjaIndividu || item.indikatorKinerja}</span>
                   </div>
                 )}
 

@@ -69,6 +69,8 @@ export interface MasterIKU {
   nama_output: string
   target_default?: string
   satuan_default?: string
+  sasaran_kinerja?: string
+  indikator_kinerja_individu?: string
   created_at: string
 }
 
@@ -103,6 +105,8 @@ export interface CascadingIKUSukpa {
   sukpa_user_id: string
   target: string | number
   satuan: string
+  sasaran_kinerja?: string
+  indikator_kinerja_individu?: string
   is_direct_sync: boolean
   status: CascadingStatus
   catatan_sanggahan?: string
@@ -129,6 +133,8 @@ export interface CascadingIKUUnit {
   unit_user_id: string
   target: string | number
   satuan: string
+  sasaran_kinerja?: string
+  indikator_kinerja_individu?: string
   is_direct_sync: boolean
   status: CascadingStatus
   catatan_sanggahan?: string
@@ -155,6 +161,8 @@ export interface CascadingOutputManajer {
   kode_output?: string
   target: string | number
   satuan: string
+  sasaran_kinerja?: string
+  indikator_kinerja_individu?: string
   is_direct_sync: boolean
   status: CascadingStatus
   catatan_sanggahan?: string
@@ -180,6 +188,8 @@ export interface CascadingUraianSPV {
   nama_uraian: string
   target: string | number
   satuan: string
+  sasaran_kinerja?: string
+  indikator_kinerja_individu?: string
   is_direct_sync: boolean
   status: CascadingStatus
   catatan_sanggahan?: string
@@ -205,6 +215,8 @@ export interface CascadingSubUraianStaff {
   nama_sub_uraian: string
   target: string | number
   satuan: string
+  sasaran_kinerja?: string
+  indikator_kinerja_individu?: string
   status: CascadingStatus
   catatan_sanggahan?: string
   target_usulan?: string | number

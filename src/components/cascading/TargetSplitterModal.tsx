@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { User } from '@/lib/types'
+import { generateCascadingFormula } from '@/lib/skpFormulas'
 import SearchableUserSelect from './SearchableUserSelect'
 
 export interface AllocationRow {
@@ -9,6 +10,8 @@ export interface AllocationRow {
   target: string | number
   namaTugas?: string
   satuan?: string
+  sasaranKinerja?: string
+  indikatorKinerjaIndividu?: string
 }
 
 interface TargetSplitterModalProps {
@@ -26,6 +29,8 @@ interface TargetSplitterModalProps {
   targetRoleLabel?: string
   filterUnitEs2?: string
   allowEditParentTarget?: boolean
+  currentCascadingLevel?: 'sukpa' | 'unit' | 'manajer' | 'spv' | 'staff'
+  kodeIku?: string
   subordinates: User[]
   onSave: (
     allocations: AllocationRow[], 
@@ -49,6 +54,8 @@ export default function TargetSplitterModal({
   targetRoleLabel = 'Pejabat / Pegawai Bawahan',
   filterUnitEs2,
   allowEditParentTarget = true,
+  currentCascadingLevel = 'staff',
+  kodeIku,
   subordinates,
   onSave,
 }: TargetSplitterModalProps) {
@@ -83,18 +90,29 @@ export default function TargetSplitterModal({
       setCurrentTarget(parentTarget)
       setCurrentSatuan(satuan)
       setIsEditingParent(allowEditParentTarget)
+
+      const initialFormula = generateCascadingFormula({
+        level: currentCascadingLevel,
+        parentTitle: parentName,
+        taskName: '',
+        satuan,
+        kodeIku,
+      })
+
       setRows([
         { 
           userId: subordinates[0]?.id || '', 
           target: requiresTaskName ? '1' : parentTarget, 
           namaTugas: '',
-          satuan: satuan || 'Laporan'
+          satuan: satuan || 'Laporan',
+          sasaranKinerja: initialFormula.sasaranKinerja,
+          indikatorKinerjaIndividu: initialFormula.indikatorKinerjaIndividu,
         }
       ])
       setIsDirectSync(false)
       setErrorMsg(null)
     }
-  }, [isOpen, parentTarget, satuan, subordinates, allowEditParentTarget, requiresTaskName])
+  }, [isOpen, parentTarget, satuan, subordinates, allowEditParentTarget, requiresTaskName, currentCascadingLevel, parentName, kodeIku])
 
   // Perhitungan numerik untuk mode persentase/kumulatif (hanya jika BUKAN uraian operasional)
   const numericParentTarget = Number(currentTarget) || 100
@@ -123,13 +141,23 @@ export default function TargetSplitterModal({
       ? (subordinates[0]?.id || '') 
       : (subordinates.find(s => !rows.some(r => r.userId === s.id))?.id || subordinates[0]?.id || '')
 
+    const formula = generateCascadingFormula({
+      level: currentCascadingLevel,
+      parentTitle: parentName,
+      taskName: '',
+      satuan: currentSatuan || 'Laporan',
+      kodeIku,
+    })
+
     setRows([
       ...rows,
       {
         userId: nextSubordinate,
         target: defaultNewTarget,
         namaTugas: '',
-        satuan: currentSatuan || 'Laporan'
+        satuan: currentSatuan || 'Laporan',
+        sasaranKinerja: formula.sasaranKinerja,
+        indikatorKinerjaIndividu: formula.indikatorKinerjaIndividu,
       }
     ])
   }
@@ -624,6 +652,73 @@ export default function TargetSplitterModal({
                         </div>
                       </div>
                     )}
+                  </div>
+
+                  {/* Formulasi Baku PermenPAN-RB No. 6/2022: Sasaran Kinerja & IKI */}
+                  <div className="pt-3 border-t border-outline-variant/30 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-primary flex items-center gap-1.5 uppercase tracking-wider">
+                        <span className="material-symbols-outlined text-sm">psychology</span>
+                        Kaidah PermenPAN-RB No. 6/2022
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const formula = generateCascadingFormula({
+                            level: currentCascadingLevel,
+                            parentTitle: parentName,
+                            taskName: row.namaTugas,
+                            satuan: row.satuan || currentSatuan,
+                            kodeIku,
+                          })
+                          handleRowChange(idx, 'sasaranKinerja', formula.sasaranKinerja)
+                          handleRowChange(idx, 'indikatorKinerjaIndividu', formula.indikatorKinerjaIndividu)
+                        }}
+                        className="text-[10px] text-primary hover:underline font-bold flex items-center gap-1 cursor-pointer"
+                        title="Otomatis sesuaikan formulasi kalimat Sasaran Kinerja (Ter...) & IKI dengan nama tugas/output"
+                      >
+                        <span className="material-symbols-outlined text-xs">magic_button</span>
+                        Rekomendasikan Kalimat Baku
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-[11px] font-bold text-on-surface">
+                            Sasaran Kinerja (Hasil yang Diharapkan)
+                          </label>
+                          <span className="text-[10px] text-on-surface-variant font-medium">
+                            Kaidah: &quot;Ter...&quot;
+                          </span>
+                        </div>
+                        <input
+                          type="text"
+                          value={row.sasaranKinerja || ''}
+                          onChange={e => handleRowChange(idx, 'sasaranKinerja', e.target.value)}
+                          placeholder="Contoh: Terlaksananya proses verifikasi..."
+                          className="w-full px-3 py-1.5 text-xs rounded-xl bg-surface-container-lowest border border-outline-variant/60 focus:bg-white focus:border-primary focus:outline-none transition-all text-on-surface"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-[11px] font-bold text-on-surface">
+                            Indikator Kinerja Individu (IKI)
+                          </label>
+                          <span className="text-[10px] text-on-surface-variant font-medium">
+                            Tolok Ukur / Output
+                          </span>
+                        </div>
+                        <input
+                          type="text"
+                          value={row.indikatorKinerjaIndividu || ''}
+                          onChange={e => handleRowChange(idx, 'indikatorKinerjaIndividu', e.target.value)}
+                          placeholder="Contoh: Jumlah berkas usulan / Output..."
+                          className="w-full px-3 py-1.5 text-xs rounded-xl bg-surface-container-lowest border border-outline-variant/60 focus:bg-white focus:border-primary focus:outline-none transition-all text-on-surface"
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
               ))}

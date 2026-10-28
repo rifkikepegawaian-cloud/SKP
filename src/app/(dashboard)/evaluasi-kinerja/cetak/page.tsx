@@ -201,8 +201,10 @@ export default function CetakDokumenEvaluasiSKPPage() {
       return {
         id: task.id,
         title: task.title,
+        sasaranKinerja: task.sasaranKinerja,
+        indikatorKinerjaIndividu: task.indikatorKinerjaIndividu,
         parentTitle: task.parentTitle,
-        indikatorKinerja: task.indikatorKinerja || `Terprosesnya ${task.title} diproses 100%`,
+        indikatorKinerja: task.indikatorKinerjaIndividu || task.indikatorKinerja || `Terprosesnya ${task.title} diproses 100%`,
         jenisKinerja: (task.jenisKinerja || 'utama') as 'utama' | 'tambahan',
         target: targetNum,
         satuan: task.satuan || 'Dokumen',
@@ -632,10 +634,15 @@ export default function CetakDokumenEvaluasiSKPPage() {
                   <tr key={item.id} className="divide-x divide-black align-top">
                     <td className="p-1.5 text-center font-bold w-8">{idx + 1}</td>
                     <td className="p-1.5">
-                      <p className="font-bold">{item.title}</p>
+                      <p className="font-bold">{item.sasaranKinerja || item.title}</p>
+                      {item.sasaranKinerja && item.title && item.sasaranKinerja !== item.title && (
+                        <p className="text-[10px] text-neutral-600 font-normal italic">
+                          Lingkup: {item.title}
+                        </p>
+                      )}
                       <p className="text-[10px] text-neutral-700 mt-1 leading-snug">
                         <span className="font-semibold">Ukuran keberhasilan/ Indikator Kinerja Individu, Target, dan Perspektif :</span>{' '}
-                        {item.indikatorKinerja}
+                        {item.indikatorKinerjaIndividu || item.indikatorKinerja}
                       </p>
                     </td>
                     <td className="p-1.5 text-[10.5px]">
@@ -666,10 +673,15 @@ export default function CetakDokumenEvaluasiSKPPage() {
                     <tr key={item.id} className="divide-x divide-black align-top">
                       <td className="p-1.5 text-center font-bold w-8">{idx + 1}</td>
                       <td className="p-1.5">
-                        <p className="font-bold">{item.title}</p>
+                        <p className="font-bold">{item.sasaranKinerja || item.title}</p>
+                        {item.sasaranKinerja && item.title && item.sasaranKinerja !== item.title && (
+                          <p className="text-[10px] text-neutral-600 font-normal italic">
+                            Lingkup: {item.title}
+                          </p>
+                        )}
                         <p className="text-[10px] text-neutral-700 mt-1 leading-snug">
                           <span className="font-semibold">Ukuran keberhasilan/ Indikator Kinerja Individu, Target, dan Perspektif :</span>{' '}
-                          {item.indikatorKinerja}
+                          {item.indikatorKinerjaIndividu || item.indikatorKinerja}
                         </p>
                       </td>
                       <td className="p-1.5 text-[10.5px]">
