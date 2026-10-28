@@ -65,26 +65,53 @@ export default function CetakDokumenSKPPage() {
 
     // 2. Check localStorage for previously saved custom profiles
     const savedProfiles = localStorage.getItem(`skp_profiles_${user.id}`)
+    let hasValidCached = false
     if (savedProfiles) {
       try {
         const parsed = JSON.parse(savedProfiles)
-        if (parsed.pegawai) setPegawaiProfile(parsed.pegawai)
-        if (parsed.penilai) setPenilaiProfile(parsed.penilai)
-        if (parsed.atasanPenilai) setAtasanPenilaiProfile(parsed.atasanPenilai)
-        return
+        const isCorrupt = 
+          !parsed.atasanPenilai?.nama ||
+          parsed.atasanPenilai?.nama?.includes('@') ||
+          !parsed.penilai?.nama ||
+          parsed.penilai?.nama?.includes('@') ||
+          parsed.atasanPenilai?.nip === '-'
+
+        if (!isCorrupt) {
+          if (parsed.pegawai) setPegawaiProfile(parsed.pegawai)
+          if (parsed.penilai) setPenilaiProfile(parsed.penilai)
+          if (parsed.atasanPenilai) setAtasanPenilaiProfile(parsed.atasanPenilai)
+          hasValidCached = true
+        }
       } catch (e) {
         console.error(e)
       }
     }
 
-    // 3. Resolve true structural superiors based on unit es4 / es3 / es2
-    const supabase = createClient()
-    getStructuralSuperiors(user, supabase).then(res => {
-      setPenilaiProfile(res.pejabatPenilai)
-      setAtasanPenilaiProfile(res.atasanPejabatPenilai)
-    }).catch(err => {
-      console.warn('Gagal memuat atasan struktural:', err)
-    })
+    if (!hasValidCached) {
+      // 3. Resolve true structural superiors based on unit es4 / es3 / es2
+      const supabase = createClient()
+      getStructuralSuperiors(user, supabase).then(res => {
+        setPenilaiProfile(res.pejabatPenilai)
+        setAtasanPenilaiProfile(res.atasanPejabatPenilai)
+
+        const freshPegawai = {
+          nama: user.pegawai?.nama_lengkap || user.email || '-',
+          nip: user.pegawai?.nip || '-',
+          pangkatGol: user.pegawai?.pangkat_golongan || '-',
+          jabatan: user.pegawai?.jabatan || ROLE_LABELS[role] || '-',
+          unitKerja: user.pegawai?.unit_es2 || '-',
+        }
+        setPegawaiProfile(freshPegawai)
+
+        localStorage.setItem(`skp_profiles_${user.id}`, JSON.stringify({
+          pegawai: freshPegawai,
+          penilai: res.pejabatPenilai,
+          atasanPenilai: res.atasanPejabatPenilai,
+        }))
+      }).catch(err => {
+        console.warn('Gagal memuat atasan struktural:', err)
+      })
+    }
   }, [user, role])
 
   // Save customized profiles
@@ -579,7 +606,7 @@ export default function CetakDokumenSKPPage() {
         {/* ────────────────────────────────────────────────────────── */}
         {/* LEMBAR PENGESAHAN & TANDA TANGAN (SEMARANG, 01 JANUARI)    */}
         {/* ────────────────────────────────────────────────────────── */}
-        <div className="pt-6 border-t-2 border-black space-y-1">
+        <div className="pt-6 border-t-2 border-black space-y-1 print:break-inside-avoid break-inside-avoid">
           <div className="text-right pr-12 pb-2">
             <p className="font-medium text-xs">
               Semarang, 01 Januari {periodeTahun}

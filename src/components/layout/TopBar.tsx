@@ -65,7 +65,7 @@ export default function TopBar({ title = 'SKP Universitas Diponegoro', user, sea
 
   return (
     <header
-      className="fixed top-0 right-0 z-40 flex items-center justify-between h-16 px-4 md:px-6 transition-all duration-300"
+      className="fixed top-0 right-0 z-40 flex items-center justify-between h-16 px-4 md:px-6 transition-all duration-300 print:hidden"
       style={{
         left: isSidebarOpen ? '280px' : '0px',
         background: 'rgba(255,255,255,0.90)',

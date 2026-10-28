@@ -78,7 +78,7 @@ export default function Sidebar({ role = 'staff' }: SidebarProps) {
         />
       )}
 
-      <aside className={`fixed left-0 top-0 h-screen w-[280px] flex flex-col py-8 px-4 z-50 transition-transform duration-300 ${
+      <aside className={`fixed left-0 top-0 h-screen w-[280px] flex flex-col py-8 px-4 z-50 transition-transform duration-300 print:hidden ${
           isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
         style={{ background: 'rgba(255,255,255,0.72)', backdropFilter: 'blur(16px)', borderRight: '1px solid rgba(193,198,215,0.25)', boxShadow: '4px 0 24px -4px rgba(0,89,187,0.06)' }}>

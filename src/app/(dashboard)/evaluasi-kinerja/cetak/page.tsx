@@ -90,21 +90,50 @@ export default function CetakDokumenEvaluasiSKPPage() {
 
     // Cek localStorage profil
     const savedProfiles = localStorage.getItem(`skp_profiles_${user.id}`)
+    let hasValidCached = false
     if (savedProfiles) {
       try {
         const parsed = JSON.parse(savedProfiles)
-        if (parsed.pegawai) setPegawaiProfile(parsed.pegawai)
-        if (parsed.penilai) setPenilaiProfile(parsed.penilai)
-        if (parsed.atasanPenilai) setAtasanPenilaiProfile(parsed.atasanPenilai)
+        const isCorrupt = 
+          !parsed.atasanPenilai?.nama ||
+          parsed.atasanPenilai?.nama?.includes('@') ||
+          !parsed.penilai?.nama ||
+          parsed.penilai?.nama?.includes('@') ||
+          parsed.atasanPenilai?.nip === '-'
+
+        if (!isCorrupt) {
+          if (parsed.pegawai) setPegawaiProfile(parsed.pegawai)
+          if (parsed.penilai) setPenilaiProfile(parsed.penilai)
+          if (parsed.atasanPenilai) setAtasanPenilaiProfile(parsed.atasanPenilai)
+          hasValidCached = true
+        }
       } catch (e) {
         console.error(e)
       }
-    } else {
+    }
+
+    if (!hasValidCached) {
       // Auto-detect hierarchy
       const supabase = createClient()
       getStructuralSuperiors(user, supabase).then(res => {
         setPenilaiProfile(res.pejabatPenilai)
         setAtasanPenilaiProfile(res.atasanPejabatPenilai)
+
+        const freshPegawai = {
+          nama: user.pegawai?.nama_lengkap || user.email || '-',
+          nip: user.pegawai?.nip || '-',
+          pangkatGol: user.pegawai?.pangkat_golongan || '-',
+          jabatan: user.pegawai?.jabatan || (role ? ROLE_LABELS[role] : '-'),
+          unitKerja: user.pegawai?.unit_es2 || '-',
+        }
+        setPegawaiProfile(freshPegawai)
+
+        // Sync clean profiles to localStorage
+        localStorage.setItem(`skp_profiles_${user.id}`, JSON.stringify({
+          pegawai: freshPegawai,
+          penilai: res.pejabatPenilai,
+          atasanPenilai: res.atasanPejabatPenilai,
+        }))
       }).catch(err => {
         console.warn('Gagal mendeteksi atasan struktural:', err)
       })
@@ -825,7 +854,7 @@ export default function CetakDokumenEvaluasiSKPPage() {
           </table>
 
           {/* Tanda Tangan Pejabat Penilai Kinerja (Kanan Bawah Sesuai PDF Hal 3) */}
-          <div className="mt-8 flex justify-end">
+          <div className="mt-8 flex justify-end print:break-inside-avoid break-inside-avoid">
             <div className="text-center text-xs min-w-[280px] space-y-16">
               <div>
                 <p>{tanggalPenetapan}</p>
@@ -1024,7 +1053,7 @@ export default function CetakDokumenEvaluasiSKPPage() {
           </table>
 
           {/* Tanda Tangan Lembar Dokumen Evaluasi (Kiri: Pegawai, Kanan: Pejabat Penilai Kinerja) */}
-          <div className="mt-12 pt-4">
+          <div className="mt-12 pt-4 print:break-inside-avoid break-inside-avoid">
             <div className="grid grid-cols-2 text-xs text-center gap-6">
               
               {/* Kiri: Pegawai yang dinilai */}

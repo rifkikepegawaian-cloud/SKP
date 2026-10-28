@@ -52,15 +52,17 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="min-h-screen bg-background text-on-background">
-      <Sidebar role={role} />
-      <TopBar user={user} />
+    <div className="min-h-screen bg-background text-on-background print:bg-white print:text-black print:min-h-0">
+      <div className="print:hidden">
+        <Sidebar role={role} />
+        <TopBar user={user} />
+      </div>
       
       <main className={isSidebarOpen 
-        ? "pl-6 pr-6 md:pl-10 md:pr-10 lg:pl-[320px] lg:pr-10 pt-[88px] pb-12 transition-all duration-300" 
-        : "pl-6 pr-6 md:pl-10 md:pr-10 lg:pl-10 lg:pr-10 pt-[88px] pb-12 transition-all duration-300"
+        ? "pl-6 pr-6 md:pl-10 md:pr-10 lg:pl-[320px] lg:pr-10 pt-[88px] pb-12 transition-all duration-300 print:p-0 print:m-0 print:w-full print:max-w-none print:pt-0" 
+        : "pl-6 pr-6 md:pl-10 md:pr-10 lg:pl-10 lg:pr-10 pt-[88px] pb-12 transition-all duration-300 print:p-0 print:m-0 print:w-full print:max-w-none print:pt-0"
       }>
-        <div className="max-w-[1440px] mx-auto">
+        <div className="max-w-[1440px] mx-auto print:max-w-none print:w-full print:p-0 print:m-0">
           {children}
         </div>
       </main>

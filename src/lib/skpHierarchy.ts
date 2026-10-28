@@ -32,6 +32,26 @@ const DEFAULT_PRESIDEN: ProfileSKP = {
   unitKerja: 'Pemerintah Republik Indonesia',
 }
 
+export async function enrichUserWithPegawai(u: User | null, supabase: any): Promise<User | null> {
+  if (!u) return null
+  if (u.pegawai && u.pegawai.nama_lengkap) return u
+
+  try {
+    if (u.pegawai_id) {
+      const { data: p } = await supabase.from('pegawai').select('*').eq('id', u.pegawai_id).maybeSingle()
+      if (p) return { ...u, pegawai: p }
+    }
+    const nipMatch = u.email?.match(/^(\d{18})@/)
+    if (nipMatch) {
+      const { data: p } = await supabase.from('pegawai').select('*').eq('nip', nipMatch[1]).maybeSingle()
+      if (p) return { ...u, pegawai: p }
+    }
+  } catch (e) {
+    console.warn('enrichUserWithPegawai error:', e)
+  }
+  return u
+}
+
 /**
  * Mendapatkan identitas Pejabat Penilai Kinerja (Atasan Langsung)
  * dan Atasan Pejabat Penilai Kinerja (Atasan dari Atasan Langsung)
@@ -70,16 +90,22 @@ export async function getStructuralSuperiors(
   const clean = (str: string) => str.toLowerCase().replace(/^(subbagian|bagian|departemen|fakultas|direktorat|biro)\s+/i, '').trim()
 
   const mapUserToProfile = (u: User, defaultJabatan: string, defaultUnit: string): ProfileSKP => {
+    let nama = u.pegawai?.nama_lengkap || ''
+    if (!nama || nama.includes('@')) {
+      nama = defaultJabatan || 'Pejabat Penilai Kinerja'
+    }
+    let nip = u.pegawai?.nip || (u.email?.match(/^(\d{18})@/)?.[1] || '-')
+    let pangkatGol = u.pegawai?.pangkat_golongan || '-'
     let jabatan = u.pegawai?.jabatan || defaultJabatan
     if (defaultJabatan && !jabatan.toLowerCase().includes('supervisor') && !jabatan.toLowerCase().includes('manajer') && !jabatan.toLowerCase().includes('rektor') && !jabatan.toLowerCase().includes('dekan') && !jabatan.toLowerCase().includes('direktur') && !jabatan.toLowerCase().includes('pimpinan')) {
       jabatan = defaultJabatan
     }
     return {
-      nama: u.pegawai?.nama_lengkap || u.email || '-',
-      nip: u.pegawai?.nip || '-',
-      pangkatGol: u.pegawai?.pangkat_golongan || '-',
+      nama,
+      nip,
+      pangkatGol,
       jabatan,
-      unitKerja: u.pegawai?.unit_es2 || defaultUnit,
+      unitKerja: u.led_unit_es2 || u.pegawai?.unit_es2 || defaultUnit,
     }
   }
 
@@ -107,6 +133,8 @@ export async function getStructuralSuperiors(
       // fallback
     }
 
+    rektorUser = await enrichUserWithPegawai(rektorUser, supabase)
+
     return {
       pejabatPenilai: rektorUser ? mapUserToProfile(rektorUser, 'Rektor Universitas Diponegoro', 'Universitas Diponegoro') : DEFAULT_REKTOR,
       atasanPejabatPenilai: DEFAULT_MENTERI,
@@ -129,6 +157,9 @@ export async function getStructuralSuperiors(
     } catch (e) {
       // ignore
     }
+
+    sukpaUser = await enrichUserWithPegawai(sukpaUser, supabase)
+    rektorUser = await enrichUserWithPegawai(rektorUser, supabase)
 
     const penilaiFallback: ProfileSKP = {
       nama: 'Prof. Dr. Ir. Muhammad Zainuri, DEA',
@@ -153,18 +184,46 @@ export async function getStructuralSuperiors(
 
     try {
       // Cari pimpinan unit di unit_es2 yang sama
-      let queryUnit = supabase.from('users').select('*, pegawai(*)').ilike('role', '%pimpinan_unit%')
-      if (unitEs2) {
-        queryUnit = queryUnit.ilike('pegawai.unit_es2', `%${clean(unitEs2)}%`)
+      const { data: puData } = await supabase
+        .from('users')
+        .select('*, pegawai(*)')
+        .ilike('role', '%pimpinan_unit%')
+
+      if (puData && puData.length > 0) {
+        const puList = puData as User[]
+        pimpinanUnitUser = puList.find(pu => {
+          const puEs2 = (pu.led_unit_es2 || pu.pegawai?.unit_es2 || '').trim()
+          return (
+            unitEs2 &&
+            puEs2 &&
+            (clean(puEs2).includes(clean(unitEs2)) || clean(unitEs2).includes(clean(puEs2)))
+          )
+        }) || null
+
+        if (!pimpinanUnitUser && unitEs2) {
+          const sdmKeywords = ['sumber daya manusia', 'sdm', 'organisasi', 'kepegawaian']
+          const isTargetSDM = sdmKeywords.some(k => unitEs2.toLowerCase().includes(k))
+          if (isTargetSDM) {
+            pimpinanUnitUser = puList.find(pu => {
+              const puEs2 = (pu.led_unit_es2 || pu.pegawai?.unit_es2 || '').toLowerCase()
+              return sdmKeywords.some(k => puEs2.includes(k))
+            }) || null
+          }
+        }
+
+        if (!pimpinanUnitUser) {
+          pimpinanUnitUser = puList[0]
+        }
       }
-      const { data: unitData } = await queryUnit.limit(1)
-      if (unitData && unitData.length > 0) pimpinanUnitUser = unitData[0] as User
 
       const { data: sukpaData } = await supabase.from('users').select('*, pegawai(*)').ilike('role', '%pimpinan_sukpa%').limit(1)
       if (sukpaData && sukpaData.length > 0) sukpaUser = sukpaData[0] as User
     } catch (e) {
       // ignore
     }
+
+    pimpinanUnitUser = await enrichUserWithPegawai(pimpinanUnitUser, supabase)
+    sukpaUser = await enrichUserWithPegawai(sukpaUser, supabase)
 
     const penilaiFallback: ProfileSKP = {
       nama: `Pimpinan ${unitEs2 || 'Unit Kerja'}`,
@@ -216,18 +275,53 @@ export async function getStructuralSuperiors(
             return mEs2 && clean(mEs2) === clean(unitEs2)
           }) || null
         }
+
+        if (!manajerUser) {
+          manajerUser = (manajerData as User[])[0]
+        }
       }
 
       // Cari pimpinan unit di unit_es2
-      let queryUnit = supabase.from('users').select('*, pegawai(*)').ilike('role', '%pimpinan_unit%')
-      if (unitEs2) {
-        queryUnit = queryUnit.ilike('pegawai.unit_es2', `%${clean(unitEs2)}%`)
+      const { data: puData } = await supabase
+        .from('users')
+        .select('*, pegawai(*)')
+        .ilike('role', '%pimpinan_unit%')
+
+      if (puData && puData.length > 0) {
+        const puList = puData as User[]
+        // 1. Direct unit match
+        pimpinanUnitUser = puList.find(pu => {
+          const puEs2 = (pu.led_unit_es2 || pu.pegawai?.unit_es2 || '').trim()
+          return (
+            unitEs2 &&
+            puEs2 &&
+            (clean(puEs2).includes(clean(unitEs2)) || clean(unitEs2).includes(clean(puEs2)))
+          )
+        }) || null
+
+        // 2. Keyword match (SDM / Sumber Daya Manusia)
+        if (!pimpinanUnitUser && unitEs2) {
+          const sdmKeywords = ['sumber daya manusia', 'sdm', 'organisasi', 'kepegawaian']
+          const isTargetSDM = sdmKeywords.some(k => unitEs2.toLowerCase().includes(k))
+          if (isTargetSDM) {
+            pimpinanUnitUser = puList.find(pu => {
+              const puEs2 = (pu.led_unit_es2 || pu.pegawai?.unit_es2 || '').toLowerCase()
+              return sdmKeywords.some(k => puEs2.includes(k))
+            }) || null
+          }
+        }
+
+        // 3. Fallback
+        if (!pimpinanUnitUser) {
+          pimpinanUnitUser = puList[0]
+        }
       }
-      const { data: unitData } = await queryUnit.limit(1)
-      if (unitData && unitData.length > 0) pimpinanUnitUser = unitData[0] as User
     } catch (e) {
       // ignore
     }
+
+    manajerUser = await enrichUserWithPegawai(manajerUser, supabase)
+    pimpinanUnitUser = await enrichUserWithPegawai(pimpinanUnitUser, supabase)
 
     const penilaiFallback: ProfileSKP = {
       nama: `Manajer ${unitEs3 || 'Bagian'}`,
@@ -246,7 +340,7 @@ export async function getStructuralSuperiors(
     }
 
     return {
-      pejabatPenilai: manajerUser ? mapUserToProfile(manajerUser, `Manajer ${unitEs3}`, unitEs2) : penilaiFallback,
+      pejabatPenilai: manajerUser ? mapUserToProfile(manajerUser, `Manajer ${unitEs3 || 'Bagian'}`, unitEs2) : penilaiFallback,
       atasanPejabatPenilai: pimpinanUnitUser ? mapUserToProfile(pimpinanUnitUser, `Pimpinan Unit ${unitEs2}`, unitEs2) : atasanFallback,
       pejabatPenilaiUser: manajerUser,
       atasanPejabatPenilaiUser: pimpinanUnitUser,
@@ -290,6 +384,10 @@ export async function getStructuralSuperiors(
           return sEs2 && clean(sEs2) === clean(unitEs2)
         }) || null
       }
+
+      if (!supervisorUser) {
+        supervisorUser = (spvData as User[])[0]
+      }
     }
 
     // Cari manajer di unit_es3
@@ -312,10 +410,17 @@ export async function getStructuralSuperiors(
           return mEs2 && clean(mEs2) === clean(unitEs2)
         }) || null
       }
+
+      if (!manajerUser) {
+        manajerUser = (manajerData as User[])[0]
+      }
     }
   } catch (e) {
     // ignore
   }
+
+  supervisorUser = await enrichUserWithPegawai(supervisorUser, supabase)
+  manajerUser = await enrichUserWithPegawai(manajerUser, supabase)
 
   const penilaiFallback: ProfileSKP = {
     nama: `Supervisor ${unitEs4 || 'Subbagian'}`,
