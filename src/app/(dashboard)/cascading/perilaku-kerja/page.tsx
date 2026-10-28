@@ -18,6 +18,8 @@ import {
   RATING_PERILAKU_CONFIG,
 } from '@/lib/constants/perilakuKerja'
 import { getStructuralSubordinates } from '@/lib/skpHierarchy'
+import KuesionerPerilakuModal from '@/components/evaluasi/KuesionerPerilakuModal'
+import { RUBRIK_PERILAKU_TENDIK, JawabanIndikator } from '@/lib/constants/rubrikPerilakuTendik'
 import Swal from 'sweetalert2'
 
 export default function PerilakuKerjaPage() {
@@ -33,6 +35,11 @@ export default function PerilakuKerjaPage() {
   const [subordinates, setSubordinates] = useState<User[]>([])
   const [selectedSubordinateId, setSelectedSubordinateId] = useState<string>('')
   const [isLoadingSubordinates, setIsLoadingSubordinates] = useState(false)
+
+  // Kuesioner Rubrik Modal State
+  const [isKuesionerOpen, setIsKuesionerOpen] = useState(false)
+  const [kuesionerInitialAspekId, setKuesionerInitialAspekId] = useState(1)
+  const [kuesionerScores, setKuesionerScores] = useState<Record<number, { score: number }>>({})
 
   // Perilaku data state
   // Keyed by aspek_id (1..7)
@@ -150,6 +157,88 @@ export default function PerilakuKerjaPage() {
 
     loadBehaviorData()
   }, [currentTargetUser, periode?.id])
+
+  // 2b. Load Kuesioner Rubrik summary from localStorage
+  useEffect(() => {
+    if (!currentTargetUser) {
+      setKuesionerScores({})
+      return
+    }
+    const targetUserId = currentTargetUser.id
+    const periodeId = periode?.id || '2026'
+    const storageKey = `kuesioner_rubrik_${targetUserId}_${periodeId}`
+    const saved = localStorage.getItem(storageKey)
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved)
+        if (parsed.jawaban) {
+          const summary: Record<number, { score: number }> = {}
+          RUBRIK_PERILAKU_TENDIK.forEach(aspek => {
+            let total = 0
+            let count = 0
+            aspek.indikatorList.forEach(ind => {
+              if (parsed.jawaban[ind.id]) {
+                total += parsed.jawaban[ind.id].skor
+                count++
+              }
+            })
+            if (count > 0) {
+              summary[aspek.id] = { score: Math.round((total / count) * 10) / 10 }
+            }
+          })
+          setKuesionerScores(summary)
+        }
+      } catch (e) {
+        console.warn('Gagal membaca ringkasan kuesioner:', e)
+      }
+    } else {
+      setKuesionerScores({})
+    }
+  }, [currentTargetUser, periode?.id])
+
+  // Handle apply from Kuesioner Rubrik Modal
+  const handleApplyKuesionerResult = (
+    results: Record<
+      number,
+      {
+        rating: RatingPerilaku
+        umpanBalik: string
+        averageScore: number
+        answersSummary: Record<string, JawabanIndikator>
+      }
+    >
+  ) => {
+    setItems(prev => {
+      const updated = { ...prev }
+      Object.entries(results).forEach(([aspekIdStr, val]) => {
+        const aId = Number(aspekIdStr)
+        if (updated[aId]) {
+          updated[aId] = {
+            ...updated[aId],
+            rating: val.rating,
+            umpan_balik: val.umpanBalik,
+          }
+        }
+      })
+
+      if (currentTargetUser) {
+        const targetUserId = currentTargetUser.id
+        const periodeId = periode?.id || '2026'
+        const storageKey = `skp_perilaku_${targetUserId}_${periodeId}`
+        localStorage.setItem(storageKey, JSON.stringify(updated))
+      }
+
+      return updated
+    })
+
+    setKuesionerScores(prev => {
+      const updated = { ...prev }
+      Object.entries(results).forEach(([aspekIdStr, val]) => {
+        updated[Number(aspekIdStr)] = { score: val.averageScore }
+      })
+      return updated
+    })
+  }
 
   // Handle field change
   const handleItemChange = (aspekId: number, field: keyof NilaiPerilakuItem, value: any) => {
@@ -481,7 +570,20 @@ export default function PerilakuKerjaPage() {
           </div>
         </div>
 
-        <div className="text-xs text-on-surface-variant md:text-right">
+        <div className="flex flex-col sm:flex-row md:flex-col items-start md:items-end gap-2 text-xs text-on-surface-variant md:text-right">
+          {activeTab === 'subordinate_behavior' && isSuperior && (
+            <button
+              type="button"
+              onClick={() => {
+                setKuesionerInitialAspekId(1)
+                setIsKuesionerOpen(true)
+              }}
+              className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-primary text-white text-xs font-bold flex items-center gap-1.5 shadow-sm hover:from-indigo-700 hover:to-primary/90 transition-all cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-sm">quiz</span>
+              Kuesioner Rubrik (21 Butir)
+            </button>
+          )}
           <p className="font-semibold text-on-surface">Pedoman Penilaian PermenPAN-RB No. 6/2022</p>
           <p className="text-[11px] text-on-surface-variant/80">
             Nilai perilaku disandingkan dengan hasil capaian kinerja untuk menetapkan Predikat Kinerja Akhir.
@@ -540,6 +642,12 @@ export default function PerilakuKerjaPage() {
                   {/* Rating Indicator */}
                   <div className="flex items-center gap-2">
                     <span className="text-[11px] font-semibold text-on-surface-variant">Status Penilaian:</span>
+                    {kuesionerScores[aspek.id] && (
+                      <span className="px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 text-[10px] font-bold flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[12px] text-indigo-600">verified</span>
+                        Skor: {kuesionerScores[aspek.id].score}
+                      </span>
+                    )}
                     <span className={`px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-1 ${
                       RATING_PERILAKU_CONFIG[currentItem.rating].badgeClass
                     }`}>
@@ -614,7 +722,7 @@ export default function PerilakuKerjaPage() {
                           <span className="text-[11px] font-bold text-on-surface">
                             Penilaian Pimpinan:
                           </span>
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex flex-wrap items-center gap-1.5">
                             {(['di_atas_ekspektasi', 'sesuai_ekspektasi', 'di_bawah_ekspektasi'] as RatingPerilaku[]).map(r => {
                               const cfg = RATING_PERILAKU_CONFIG[r]
                               const isSelected = currentItem.rating === r
@@ -633,6 +741,19 @@ export default function PerilakuKerjaPage() {
                                 </button>
                               )
                             })}
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setKuesionerInitialAspekId(aspek.id)
+                                setIsKuesionerOpen(true)
+                              }}
+                              className="px-2.5 py-1 rounded-xl text-[11px] font-bold border border-indigo-200 bg-white hover:bg-indigo-50 text-indigo-700 transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
+                              title="Buka kuesioner rubrik 3 butir untuk aspek ini"
+                            >
+                              <span className="material-symbols-outlined text-xs text-indigo-600">quiz</span>
+                              Kuesioner
+                            </button>
                           </div>
                         </div>
 
@@ -810,6 +931,27 @@ export default function PerilakuKerjaPage() {
           </div>
         </div>
       )}
+
+      {/* ── Kuesioner Rubrik Penilaian Perilaku Modal ── */}
+      <KuesionerPerilakuModal
+        isOpen={isKuesionerOpen}
+        onClose={() => setIsKuesionerOpen(false)}
+        targetPegawai={
+          currentTargetUser
+            ? {
+                id: currentTargetUser.id,
+                nama: currentTargetUser.pegawai?.nama_lengkap || currentTargetUser.email || 'Pegawai',
+                nip: currentTargetUser.pegawai?.nip,
+                jabatan: currentTargetUser.pegawai?.jabatan || currentTargetUser.role,
+              }
+            : null
+        }
+        periodeId={periode?.id || '2026'}
+        initialAspekId={kuesionerInitialAspekId}
+        onApplyResult={handleApplyKuesionerResult}
+      />
+
     </div>
   )
 }
+
