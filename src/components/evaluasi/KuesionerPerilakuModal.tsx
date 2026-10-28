@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import {
   RUBRIK_PERILAKU_TENDIK,
   RubrikAspekDef,
@@ -47,6 +47,14 @@ export default function KuesionerPerilakuModal({
 }: KuesionerModalProps) {
   const [activeAspekId, setActiveAspekId] = useState<number>(initialAspekId)
   const [viewAllMode, setViewAllMode] = useState<boolean>(false)
+  const contentRef = useRef<HTMLDivElement>(null)
+
+  // Reset scroll to top whenever aspect changes
+  useEffect(() => {
+    if (contentRef.current) {
+      contentRef.current.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+  }, [activeAspekId, viewAllMode])
 
   // Storage key for answers
   const storageKey = targetPegawai
@@ -276,7 +284,7 @@ export default function KuesionerPerilakuModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
-      <div className="bg-white rounded-3xl shadow-2xl border border-outline-variant/30 w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden">
+      <div className="bg-white rounded-3xl shadow-2xl border border-outline-variant/30 w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden">
         
         {/* ── Modal Header ── */}
         <div className="p-6 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -329,75 +337,152 @@ export default function KuesionerPerilakuModal({
         </div>
 
         {/* ── Overall Metric & Rubric Guide Bar ── */}
-        <div className="bg-surface-container-low px-6 py-3 border-b border-outline-variant/20 flex flex-wrap items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-4">
+        <div className="bg-surface-container-low px-6 py-2.5 border-b border-outline-variant/20 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-2">
-              <span className="text-on-surface-variant font-medium">Predikat Kumulatif:</span>
-              <span className={`px-2.5 py-0.5 rounded-full font-bold text-xs border ${overallMetrics.badgeClass}`}>
+              <span className="text-on-surface-variant font-semibold text-[11px] uppercase tracking-wider">
+                Predikat Kumulatif:
+              </span>
+              <span className={`px-2.5 py-0.5 rounded-full font-bold text-xs border flex items-center gap-1 shadow-2xs ${overallMetrics.badgeClass}`}>
+                <span className="material-symbols-outlined text-[13px]">
+                  {overallMetrics.predikat === 'Di Atas Ekspektasi'
+                    ? 'star'
+                    : overallMetrics.predikat === 'Di Bawah Ekspektasi'
+                    ? 'warning'
+                    : 'check_circle'}
+                </span>
                 {overallMetrics.predikat}
               </span>
             </div>
-            <div className="text-on-surface-variant">
-              Rata-rata Skor: <strong className="text-on-surface">{overallMetrics.overallAvg}</strong> / 100
+
+            <div className="flex items-center gap-1.5 text-on-surface-variant">
+              <span className="text-[11px] font-medium">Rata-rata Skor:</span>
+              <span className="font-mono font-black text-on-surface text-sm bg-white px-2 py-0.5 rounded-lg border border-outline-variant/30">
+                {overallMetrics.overallAvg} <span className="text-[10px] text-outline font-normal">/ 100</span>
+              </span>
             </div>
-            <div className="hidden sm:flex items-center gap-2 text-[11px] text-on-surface-variant">
-              <span>(Di Atas: <strong className="text-purple-700">{overallMetrics.countDiAtas}</strong>,</span>
-              <span>Sesuai: <strong className="text-emerald-700">{overallMetrics.countSesuai}</strong>,</span>
-              <span>Di Bawah: <strong className="text-amber-700">{overallMetrics.countDiBawah}</strong>)</span>
+
+            <div className="hidden sm:flex items-center gap-2 text-[11px] bg-white/70 px-2.5 py-1 rounded-xl border border-outline-variant/20">
+              <span className="text-purple-700 font-bold flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-purple-600" />
+                {overallMetrics.countDiAtas} Di Atas
+              </span>
+              <span className="text-outline">•</span>
+              <span className="text-emerald-700 font-bold flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+                {overallMetrics.countSesuai} Sesuai
+              </span>
+              <span className="text-outline">•</span>
+              <span className="text-amber-700 font-bold flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-600" />
+                {overallMetrics.countDiBawah} Di Bawah
+              </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 text-[11px] text-on-surface-variant">
-            <span className="font-semibold text-primary">Rentang Rubrik:</span>
-            <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">0–75 Di Bawah</span>
-            <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">76–90 Sesuai</span>
-            <span className="px-1.5 py-0.5 rounded bg-purple-50 text-purple-800 border border-purple-200">91–100 Di Atas</span>
+          <div className="flex items-center gap-1.5 text-[11px]">
+            <span className="text-outline font-semibold">Skala:</span>
+            <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 font-medium">
+              &lt;76 Di Bawah
+            </span>
+            <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 font-medium">
+              76–90 Sesuai
+            </span>
+            <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-800 border border-purple-200 font-medium">
+              &gt;90 Di Atas
+            </span>
           </div>
         </div>
 
-        {/* ── Aspek Navigation Pills (When not in View All mode) ── */}
+        {/* ── Aspek Navigation Deck (Structured 7-Grid Cards) ── */}
         {!viewAllMode && (
-          <div className="flex items-center gap-1.5 px-6 py-2.5 bg-white border-b border-outline-variant/20 overflow-x-auto no-scrollbar">
-            {RUBRIK_PERILAKU_TENDIK.map(aspek => {
-              const isActive = aspek.id === activeAspekId
-              const metric = aspekMetrics[aspek.id]
-              return (
-                <button
-                  key={aspek.id}
-                  onClick={() => setActiveAspekId(aspek.id)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 flex-shrink-0 cursor-pointer ${
-                    isActive
-                      ? 'bg-primary text-white shadow-sm'
-                      : 'bg-surface-container-low text-on-surface hover:bg-surface-container border border-outline-variant/20'
-                  }`}
-                >
-                  <span className="w-5 h-5 rounded-lg bg-white/20 flex items-center justify-center text-[10px] font-black">
-                    {aspek.id}
-                  </span>
-                  <span>{aspek.singkatan}</span>
-                  {metric && (
-                    <span
-                      className={`text-[9px] px-1.5 py-0.2 rounded-full font-bold ${
-                        isActive
-                          ? 'bg-white/30 text-white'
-                          : metric.rating === 'di_atas_ekspektasi'
-                          ? 'bg-purple-100 text-purple-800'
-                          : metric.rating === 'di_bawah_ekspektasi'
-                          ? 'bg-amber-100 text-amber-800'
-                          : 'bg-emerald-100 text-emerald-800'
+          <div className="bg-slate-50/90 border-b border-outline-variant/20 px-6 py-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+              {RUBRIK_PERILAKU_TENDIK.map(aspek => {
+                const isActive = aspek.id === activeAspekId
+                const metric = aspekMetrics[aspek.id]
+                return (
+                  <button
+                    key={aspek.id}
+                    type="button"
+                    onClick={() => setActiveAspekId(aspek.id)}
+                    className={`group relative rounded-2xl p-2.5 transition-all duration-200 cursor-pointer flex flex-col justify-between gap-1.5 border text-left ${
+                      isActive
+                        ? 'bg-gradient-to-br from-indigo-950 via-slate-900 to-indigo-900 text-white border-indigo-700 shadow-md shadow-indigo-950/20 ring-2 ring-primary/40'
+                        : 'bg-white hover:bg-slate-50 text-on-surface border-outline-variant/30 hover:border-indigo-300 shadow-2xs'
+                    }`}
+                  >
+                    {/* Top: sequence number + icon */}
+                    <div className="flex items-center justify-between">
+                      <span
+                        className={`w-5 h-5 rounded-md text-[10px] font-black flex items-center justify-center transition-colors ${
+                          isActive
+                            ? 'bg-white/20 text-white'
+                            : 'bg-slate-100 text-slate-700 font-mono'
+                        }`}
+                      >
+                        0{aspek.id}
+                      </span>
+                      <span
+                        className={`material-symbols-outlined text-[17px] transition-colors ${
+                          isActive ? 'text-indigo-300' : 'text-slate-400 group-hover:text-primary'
+                        }`}
+                      >
+                        {aspek.icon}
+                      </span>
+                    </div>
+
+                    {/* Center: Title */}
+                    <div className="leading-tight">
+                      <p className={`text-xs font-extrabold truncate ${isActive ? 'text-white' : 'text-slate-900'}`}>
+                        {aspek.singkatan}
+                      </p>
+                      <p className={`text-[10px] truncate ${isActive ? 'text-slate-300' : 'text-slate-500'}`}>
+                        Aspek {aspek.id}
+                      </p>
+                    </div>
+
+                    {/* Bottom: score & status tag */}
+                    <div
+                      className={`pt-1.5 border-t flex items-center justify-between text-[10px] ${
+                        isActive ? 'border-white/10' : 'border-slate-100'
                       }`}
                     >
-                      {metric.avgScore}
-                    </span>
-                  )}
-                </button>
-              )
-            })}
+                      <span className={`font-mono font-black ${isActive ? 'text-cyan-300' : 'text-slate-700'}`}>
+                        {metric.avgScore}
+                      </span>
+                      <span
+                        className={`px-1.5 py-0.2 rounded-md font-bold text-[9px] uppercase tracking-wider ${
+                          isActive
+                            ? 'bg-white/20 text-white'
+                            : metric.rating === 'di_atas_ekspektasi'
+                            ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                            : metric.rating === 'di_bawah_ekspektasi'
+                            ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                            : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        }`}
+                      >
+                        {metric.rating === 'di_atas_ekspektasi'
+                          ? 'Di Atas'
+                          : metric.rating === 'di_bawah_ekspektasi'
+                          ? 'Di Bawah'
+                          : 'Sesuai'}
+                      </span>
+                    </div>
+
+                    {/* Active indicator bar */}
+                    {isActive && (
+                      <div className="absolute -bottom-px left-3 right-3 h-[3px] bg-gradient-to-r from-cyan-400 to-indigo-400 rounded-full" />
+                    )}
+                  </button>
+                )
+              })}
+            </div>
           </div>
         )}
 
         {/* ── Modal Body (Scrollable Questionnaire Content) ── */}
-        <div className="p-6 overflow-y-auto space-y-6 flex-1 bg-surface-container-lowest/50">
+        <div ref={contentRef} className="p-6 overflow-y-auto space-y-6 flex-1 bg-surface-container-lowest/50">
           {(viewAllMode ? RUBRIK_PERILAKU_TENDIK : [currentAspek]).map(aspek => {
             const metric = aspekMetrics[aspek.id]
             const ratingConfig = RATING_PERILAKU_CONFIG[metric.rating]
@@ -407,30 +492,47 @@ export default function KuesionerPerilakuModal({
                 key={aspek.id}
                 className="bg-white rounded-3xl border border-outline-variant/30 p-6 shadow-xs space-y-5"
               >
-                {/* Aspek Header */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-outline-variant/20">
-                  <div className="space-y-0.5">
-                    <div className="flex items-center gap-2">
-                      <span className="w-7 h-7 rounded-xl bg-primary/10 text-primary font-black text-xs flex items-center justify-center">
-                        {aspek.id}
-                      </span>
-                      <h4 className="text-base font-extrabold text-on-surface">
+                {/* Hero Aspek Header */}
+                <div className="p-5 rounded-2xl bg-gradient-to-r from-slate-50 via-indigo-50/40 to-slate-50 border border-indigo-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="flex items-start gap-3.5">
+                    <div className="w-12 h-12 rounded-2xl bg-primary text-white flex items-center justify-center font-black text-base shadow-md shadow-primary/25 shrink-0">
+                      <span className="material-symbols-outlined text-2xl">{aspek.icon}</span>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded-md bg-primary/10 text-primary text-[10px] font-black uppercase tracking-wider">
+                          Aspek ke-{aspek.id} dari 7 Core Values
+                        </span>
+                        <span className="text-[11px] text-on-surface-variant font-bold">
+                          Nilai Dasar BerAKHLAK
+                        </span>
+                      </div>
+                      <h4 className="text-lg font-black text-on-surface">
                         {aspek.nama}
                       </h4>
+                      <p className="text-xs text-on-surface-variant italic leading-relaxed max-w-2xl">
+                        &ldquo;{aspek.definisi}&rdquo;
+                      </p>
                     </div>
-                    <p className="text-xs text-on-surface-variant italic pl-9">
-                      "{aspek.definisi}"
-                    </p>
                   </div>
 
-                  {/* Aspek Metric Badge */}
-                  <div className="flex items-center gap-2 self-start sm:self-auto pl-9 sm:pl-0">
+                  {/* Aspect Score Card */}
+                  <div className="p-3.5 bg-white rounded-2xl border border-outline-variant/30 shadow-xs flex items-center gap-4 shrink-0">
                     <div className="text-right">
-                      <div className="text-[10px] text-outline uppercase font-bold">
-                        Skor Aspek: {metric.avgScore}
+                      <div className="text-[10px] font-bold text-outline uppercase tracking-wider">
+                        Rata-rata Aspek
                       </div>
-                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold border ${ratingConfig.badgeClass}`}>
-                        <span className="material-symbols-outlined text-xs">{ratingConfig.icon}</span>
+                      <div className="text-xl font-black font-mono text-primary leading-tight">
+                        {metric.avgScore} <span className="text-xs font-normal text-outline">/ 100</span>
+                      </div>
+                    </div>
+                    <div className="h-8 w-px bg-outline-variant/30" />
+                    <div>
+                      <div className="text-[10px] font-bold text-outline uppercase tracking-wider mb-1">
+                        Hasil Rating
+                      </div>
+                      <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold border shadow-2xs ${ratingConfig.badgeClass}`}>
+                        <span className="material-symbols-outlined text-sm">{ratingConfig.icon}</span>
                         {ratingConfig.label}
                       </span>
                     </div>
@@ -448,24 +550,27 @@ export default function KuesionerPerilakuModal({
                     return (
                       <div
                         key={ind.id}
-                        className="p-4 rounded-2xl bg-surface-container-lowest border border-outline-variant/30 space-y-3"
+                        className="p-5 rounded-2xl bg-surface-container-lowest border border-outline-variant/30 space-y-3.5 shadow-2xs"
                       >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex items-start gap-2">
-                            <span className="px-2 py-0.5 rounded-lg bg-surface-container-high text-on-surface font-bold text-xs flex-shrink-0">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-outline-variant/15">
+                          <div className="flex items-start sm:items-center gap-2.5">
+                            <span className="px-2.5 py-1 rounded-xl bg-slate-900 text-white font-mono font-bold text-xs flex-shrink-0 shadow-2xs">
                               Butir {ind.id}
                             </span>
                             <p className="text-xs font-bold text-on-surface leading-snug">
                               {ind.kriteria}
                             </p>
                           </div>
-                          <span className="text-[11px] font-mono font-bold text-primary flex-shrink-0">
-                            Skor: {currentAns.skor}
-                          </span>
+                          <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-auto">
+                            <span className="text-[10px] text-on-surface-variant font-medium">Nilai Butir:</span>
+                            <span className="text-xs font-mono font-black text-primary bg-primary/10 px-2 py-0.5 rounded-lg border border-primary/20">
+                              {currentAns.skor}
+                            </span>
+                          </div>
                         </div>
 
                         {/* 3 Option Rubric Radios */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 pt-1">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-0.5">
                           
                           {/* Option 1: Di Bawah Ekspektasi */}
                           <div
@@ -477,20 +582,26 @@ export default function KuesionerPerilakuModal({
                                 aspek.id
                               )
                             }
-                            className={`p-3 rounded-xl border text-xs cursor-pointer transition-all flex flex-col justify-between gap-2 ${
+                            className={`p-3.5 rounded-2xl border text-xs cursor-pointer transition-all flex flex-col justify-between gap-2.5 ${
                               currentAns.level === 'di_bawah_ekspektasi'
-                                ? 'bg-amber-50/90 border-amber-500 shadow-sm ring-1 ring-amber-500'
-                                : 'bg-white border-outline-variant/30 hover:border-amber-300 hover:bg-amber-50/30'
+                                ? 'bg-amber-50/90 border-amber-500 shadow-sm ring-2 ring-amber-500/30'
+                                : 'bg-white border-outline-variant/30 hover:border-amber-300 hover:bg-amber-50/20'
                             }`}
                           >
                             <div className="flex items-center justify-between gap-2">
-                              <span className="font-bold text-[11px] text-amber-800 flex items-center gap-1">
-                                <span className="material-symbols-outlined text-sm">warning</span>
-                                Di Bawah Ekspektasi (0–75)
+                              <div className="flex items-center gap-1.5">
+                                <span className={`material-symbols-outlined text-base ${
+                                  currentAns.level === 'di_bawah_ekspektasi' ? 'text-amber-700' : 'text-slate-300'
+                                }`}>
+                                  {currentAns.level === 'di_bawah_ekspektasi' ? 'radio_button_checked' : 'radio_button_unchecked'}
+                                </span>
+                                <span className="font-bold text-[11px] text-amber-900">
+                                  Di Bawah Ekspektasi
+                                </span>
+                              </div>
+                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-100/70 text-amber-800 font-bold">
+                                0–75
                               </span>
-                              {currentAns.level === 'di_bawah_ekspektasi' && (
-                                <span className="material-symbols-outlined text-sm text-amber-700">check_circle</span>
-                              )}
                             </div>
                             <p className="text-on-surface-variant leading-relaxed text-[11px]">
                               {ind.diBawah.deskripsi}
@@ -507,20 +618,26 @@ export default function KuesionerPerilakuModal({
                                 aspek.id
                               )
                             }
-                            className={`p-3 rounded-xl border text-xs cursor-pointer transition-all flex flex-col justify-between gap-2 ${
+                            className={`p-3.5 rounded-2xl border text-xs cursor-pointer transition-all flex flex-col justify-between gap-2.5 ${
                               currentAns.level === 'sesuai_ekspektasi'
-                                ? 'bg-emerald-50/90 border-emerald-500 shadow-sm ring-1 ring-emerald-500'
-                                : 'bg-white border-outline-variant/30 hover:border-emerald-300 hover:bg-emerald-50/30'
+                                ? 'bg-emerald-50/90 border-emerald-500 shadow-sm ring-2 ring-emerald-500/30'
+                                : 'bg-white border-outline-variant/30 hover:border-emerald-300 hover:bg-emerald-50/20'
                             }`}
                           >
                             <div className="flex items-center justify-between gap-2">
-                              <span className="font-bold text-[11px] text-emerald-800 flex items-center gap-1">
-                                <span className="material-symbols-outlined text-sm">check_circle</span>
-                                Sesuai Ekspektasi (76–90)
+                              <div className="flex items-center gap-1.5">
+                                <span className={`material-symbols-outlined text-base ${
+                                  currentAns.level === 'sesuai_ekspektasi' ? 'text-emerald-700' : 'text-slate-300'
+                                }`}>
+                                  {currentAns.level === 'sesuai_ekspektasi' ? 'radio_button_checked' : 'radio_button_unchecked'}
+                                </span>
+                                <span className="font-bold text-[11px] text-emerald-900">
+                                  Sesuai Ekspektasi
+                                </span>
+                              </div>
+                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-100/70 text-emerald-800 font-bold">
+                                76–90
                               </span>
-                              {currentAns.level === 'sesuai_ekspektasi' && (
-                                <span className="material-symbols-outlined text-sm text-emerald-700">check_circle</span>
-                              )}
                             </div>
                             <p className="text-on-surface-variant leading-relaxed text-[11px]">
                               {ind.sesuai.deskripsi}
@@ -537,20 +654,26 @@ export default function KuesionerPerilakuModal({
                                 aspek.id
                               )
                             }
-                            className={`p-3 rounded-xl border text-xs cursor-pointer transition-all flex flex-col justify-between gap-2 ${
+                            className={`p-3.5 rounded-2xl border text-xs cursor-pointer transition-all flex flex-col justify-between gap-2.5 ${
                               currentAns.level === 'di_atas_ekspektasi'
-                                ? 'bg-purple-50/90 border-purple-500 shadow-sm ring-1 ring-purple-500'
-                                : 'bg-white border-outline-variant/30 hover:border-purple-300 hover:bg-purple-50/30'
+                                ? 'bg-purple-50/90 border-purple-500 shadow-sm ring-2 ring-purple-500/30'
+                                : 'bg-white border-outline-variant/30 hover:border-purple-300 hover:bg-purple-50/20'
                             }`}
                           >
                             <div className="flex items-center justify-between gap-2">
-                              <span className="font-bold text-[11px] text-purple-800 flex items-center gap-1">
-                                <span className="material-symbols-outlined text-sm">star</span>
-                                Di Atas Ekspektasi (91–100)
+                              <div className="flex items-center gap-1.5">
+                                <span className={`material-symbols-outlined text-base ${
+                                  currentAns.level === 'di_atas_ekspektasi' ? 'text-purple-700' : 'text-slate-300'
+                                }`}>
+                                  {currentAns.level === 'di_atas_ekspektasi' ? 'radio_button_checked' : 'radio_button_unchecked'}
+                                </span>
+                                <span className="font-bold text-[11px] text-purple-900">
+                                  Di Atas Ekspektasi
+                                </span>
+                              </div>
+                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-purple-100/70 text-purple-800 font-bold">
+                                91–100
                               </span>
-                              {currentAns.level === 'di_atas_ekspektasi' && (
-                                <span className="material-symbols-outlined text-sm text-purple-700">check_circle</span>
-                              )}
                             </div>
                             <p className="text-on-surface-variant leading-relaxed text-[11px]">
                               {ind.diAtas.deskripsi}
