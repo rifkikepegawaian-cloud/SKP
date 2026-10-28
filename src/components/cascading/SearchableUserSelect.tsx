@@ -19,7 +19,7 @@ export default function SearchableUserSelect({
   value,
   onChange,
   users,
-  placeholder = 'Cari berdasarkan Nama atau NIP...',
+  placeholder = 'Ketik Nama atau NIP pegawai...',
   targetRoleLabel = 'Pegawai',
   filterUnitEs2,
   disabled = false,
@@ -52,24 +52,41 @@ export default function SearchableUserSelect({
   // Cari user terpilih baik dari props `users` maupun dari cache hasil remote search
   const selectedUser = useMemo(() => {
     if (!value) return null
+    // Prioritaskan yang sudah memiliki data pegawai lengkap
+    if (selectedUserCache && selectedUserCache.id === value && selectedUserCache.pegawai?.nama_lengkap) {
+      return selectedUserCache
+    }
+
     const foundInProps = users.find(u => u.id === value)
-    if (foundInProps) return foundInProps
-    if (selectedUserCache && selectedUserCache.id === value) return selectedUserCache
-    return null
+    if (foundInProps && foundInProps.pegawai?.nama_lengkap) {
+      return foundInProps
+    }
+
+    return foundInProps || selectedUserCache || null
   }, [users, value, selectedUserCache])
 
-  // Ambil detail selectedUser jika belum ada di memory
+  // Ambil detail selectedUser jika belum ada di memory atau belum ada data pegawai-nya
   useEffect(() => {
-    if (value && !selectedUser) {
+    if (value && (!selectedUser || !selectedUser.pegawai?.nama_lengkap)) {
       const supabase = createClient()
       supabase
         .from('users')
-        .select('*, pegawai(*)')
+        .select('*, pegawai!inner(*)')
         .eq('id', value)
         .maybeSingle()
-        .then(({ data }) => {
-          if (data) {
+        .then(({ data, error }) => {
+          if (data && (data as any).pegawai) {
             setSelectedUserCache(data as User)
+          } else {
+            // Fallback jika tidak match inner join
+            supabase
+              .from('users')
+              .select('*, pegawai(*)')
+              .eq('id', value)
+              .maybeSingle()
+              .then(({ data: fallbackData }) => {
+                if (fallbackData) setSelectedUserCache(fallbackData as User)
+              })
           }
         })
     }
@@ -80,7 +97,7 @@ export default function SearchableUserSelect({
     const map = new Map<string, User>()
     // Masukkan user lokal
     users.forEach(u => map.set(u.id, u))
-    // Masukkan user hasil remote search
+    // Masukkan user hasil remote search (akan menimpa dengan data lengkap pegawai jika ada)
     remoteResults.forEach(u => map.set(u.id, u))
     // Masukkan selected user agar selalu ada
     if (selectedUser) map.set(selectedUser.id, selectedUser)
@@ -90,34 +107,37 @@ export default function SearchableUserSelect({
 
   // Filter gabungan berdasarkan input kata kunci (Nama, NIP, Jabatan, Unit)
   const filteredUsers = useMemo(() => {
-    const q = searchQuery.toLowerCase().trim()
+    const rawQ = searchQuery.trim()
+    const q = rawQ.toLowerCase()
     if (!q) return combinedUsers
+
+    // Hanya ambil angka untuk matching NIP fleksibel
+    const digitsOnlyQ = rawQ.replace(/\D/g, '')
 
     return combinedUsers.filter(u => {
       const nama = (u.pegawai?.nama_lengkap || '').toLowerCase()
       const nip = (u.pegawai?.nip || '').toLowerCase()
+      const nipDigits = (u.pegawai?.nip || '').replace(/\D/g, '')
       const email = (u.email || '').toLowerCase()
       const jabatan = (u.pegawai?.jabatan || '').toLowerCase()
       const unit = (u.pegawai?.unit_es2 || u.led_unit_es2 || '').toLowerCase()
       const bagian = (u.pegawai?.unit_es3 || u.led_unit_es3 || '').toLowerCase()
       const subbag = (u.pegawai?.unit_es4 || '').toLowerCase()
 
-      return (
-        nama.includes(q) ||
-        nip.includes(q) ||
-        email.includes(q) ||
-        jabatan.includes(q) ||
-        unit.includes(q) ||
-        bagian.includes(q) ||
-        subbag.includes(q)
-      )
+      const matchNama = nama.includes(q)
+      const matchNip = nip.includes(q) || (digitsOnlyQ.length >= 3 && nipDigits.includes(digitsOnlyQ))
+      const matchEmail = email.includes(q)
+      const matchJabatan = jabatan.includes(q)
+      const matchUnit = unit.includes(q) || bagian.includes(q) || subbag.includes(q)
+
+      return matchNama || matchNip || matchEmail || matchJabatan || matchUnit
     })
   }, [combinedUsers, searchQuery])
 
-  // Live Database Search: mencari ke SELURUH data pegawai di Supabase tanpa batasan 1.000 data
+  // Live Database Search: mencari ke SELURUH database pegawai Undip secara real-time
   useEffect(() => {
-    const q = searchQuery.trim()
-    if (!q || q.length < 2) {
+    const rawQ = searchQuery.trim()
+    if (!rawQ || rawQ.length < 2) {
       setRemoteResults([])
       setIsSearchingRemote(false)
       return
@@ -128,13 +148,13 @@ export default function SearchableUserSelect({
         setIsSearchingRemote(true)
         const supabase = createClient()
 
-        // Query ke tabel users join pegawai dengan filter ilike pada nama dan nip
+        // Query ke tabel users join pegawai dengan filter ilike pada nama_lengkap dan nip
         let query = supabase
           .from('users')
           .select('*, pegawai!inner(*)')
-          .or(`nama_lengkap.ilike.%${q}%,nip.ilike.%${q}%,email.ilike.%${q}%`, { foreignTable: 'pegawai' })
+          .or(`nama_lengkap.ilike.%${rawQ}%,nip.ilike.%${rawQ}%`, { foreignTable: 'pegawai' })
 
-        // Filter role sesuai konteks penugasan
+        // Filter role sesuai konteks penugasan jika relevan
         const roleLower = targetRoleLabel.toLowerCase()
         if (roleLower.includes('staf') || roleLower.includes('staff')) {
           query = query.ilike('role', '%staff%')
@@ -142,27 +162,28 @@ export default function SearchableUserSelect({
           query = query.ilike('role', '%supervisor%')
         } else if (roleLower.includes('manajer')) {
           query = query.ilike('role', '%manajer%')
-        }
-
-        // Filter unit Eselon II jika ditetapkan
-        if (filterUnitEs2) {
-          query = query.eq('pegawai.unit_es2', filterUnitEs2)
+        } else if (roleLower.includes('unit')) {
+          query = query.ilike('role', '%pimpinan_unit%')
+        } else if (roleLower.includes('sukpa')) {
+          query = query.ilike('role', '%pimpinan_sukpa%')
         }
 
         const { data, error } = await query.limit(50)
 
         if (!error && data) {
           setRemoteResults(data as User[])
+        } else if (error) {
+          console.warn('Live remote search error:', error.message)
         }
       } catch (err) {
-        console.warn('Live remote search error:', err)
+        console.warn('Live remote search exception:', err)
       } finally {
         setIsSearchingRemote(false)
       }
-    }, 300)
+    }, 250)
 
     return () => clearTimeout(timer)
-  }, [searchQuery, targetRoleLabel, filterUnitEs2])
+  }, [searchQuery, targetRoleLabel])
 
   // Handle click outside to close dropdown
   useEffect(() => {
@@ -221,19 +242,23 @@ export default function SearchableUserSelect({
       >
         {selectedUser ? (
           <div className="min-w-0 flex-1 text-left py-0.5">
-            {/* Baris 1: Nama Lengkap Pegawai - Bersih dan tidak terhimpit NIP */}
+            {/* Baris 1: Nama Lengkap Pegawai */}
             <p className="font-bold text-xs text-on-surface truncate leading-tight">
               {selectedUser.pegawai?.nama_lengkap || selectedUser.email}
             </p>
 
-            {/* Baris 2: NIP dan Jabatan / Unit - Rapi di bawah nama */}
+            {/* Baris 2: NIP dan Jabatan / Unit - Rapi dan Jelas */}
             <div className="flex items-center gap-1.5 text-[10px] text-on-surface-variant mt-1 overflow-hidden flex-wrap">
-              {selectedUser.pegawai?.nip && (
-                <span className="font-mono bg-surface-container-high px-1.5 py-0.5 rounded text-[9.5px] font-bold text-primary shrink-0">
+              {selectedUser.pegawai?.nip ? (
+                <span className="font-mono bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.5 rounded text-[9.5px] font-bold shrink-0">
                   NIP. {selectedUser.pegawai.nip}
                 </span>
+              ) : selectedUser.email && (
+                <span className="font-mono bg-surface-container-high px-1.5 py-0.5 rounded text-[9.5px] text-on-surface-variant shrink-0">
+                  {selectedUser.email.split('@')[0]}
+                </span>
               )}
-              <span className="truncate opacity-80 text-[10.5px]">
+              <span className="truncate opacity-85 text-[10.5px]">
                 {getUserBadge(selectedUser)}
               </span>
             </div>
@@ -267,7 +292,7 @@ export default function SearchableUserSelect({
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 placeholder={placeholder}
-                className="w-full pl-8 pr-7 py-1.5 text-xs rounded-xl bg-surface-container-low border border-outline-variant/40 focus:border-primary focus:outline-none font-medium text-on-surface"
+                className="w-full pl-8 pr-7 py-2 text-xs rounded-xl bg-surface-container-low border border-outline-variant/40 focus:border-primary focus:bg-white focus:outline-none font-medium text-on-surface"
               />
               {isSearchingRemote ? (
                 <span className="material-symbols-outlined absolute right-2 text-primary animate-spin text-xs">
@@ -284,7 +309,7 @@ export default function SearchableUserSelect({
               ) : null}
             </div>
             <div className="flex items-center justify-between text-[10px] text-on-surface-variant/70 mt-1.5 px-1 font-medium">
-              <span>Mencari di seluruh database pegawai Undip</span>
+              <span>Cari berdasarkan Nama atau Nomor NIP</span>
               {searchQuery && (
                 <span className="text-primary font-bold">
                   {filteredUsers.length} ditemukan
@@ -300,52 +325,58 @@ export default function SearchableUserSelect({
                 <span className="material-symbols-outlined text-2xl text-on-surface-variant/40">person_off</span>
                 <p className="text-xs text-on-surface-variant font-medium">
                   {isSearchingRemote 
-                    ? 'Mencari di seluruh data pegawai...' 
+                    ? 'Mencari di seluruh database pegawai...' 
                     : `Tidak ditemukan ${targetRoleLabel} yang cocok.`}
                 </p>
                 <p className="text-[10px] text-on-surface-variant/60">
-                  Coba ketik bagian dari nama atau nomor NIP pegawai.
+                  Coba ketik bagian nama pegawai atau nomor NIP.
                 </p>
               </div>
             ) : (
               filteredUsers.map(u => {
                 const isSelected = u.id === value
                 const badge = getUserBadge(u)
+                const nama = u.pegawai?.nama_lengkap || u.email
+                const nip = u.pegawai?.nip || (u.email?.includes('@') ? u.email.split('@')[0] : '')
 
                 return (
                   <button
                     key={u.id}
                     type="button"
                     onClick={() => handleSelect(u)}
-                    className={`w-full text-left p-2.5 rounded-xl transition-all flex items-start justify-between gap-2 cursor-pointer ${
+                    className={`w-full text-left p-2.5 rounded-xl transition-all flex items-start justify-between gap-2.5 cursor-pointer ${
                       isSelected
                         ? 'bg-primary/10 text-primary font-semibold'
                         : 'hover:bg-surface-container text-on-surface'
                     }`}
                   >
                     <div className="min-w-0 flex-1">
-                      {/* Baris 1: Nama Lengkap */}
-                      <p className="font-bold text-xs text-on-surface leading-tight">
-                        {u.pegawai?.nama_lengkap || u.email}
-                      </p>
-
-                      {/* Baris 2: NIP dan Jabatan */}
-                      <div className="flex items-center gap-1.5 text-[10px] text-on-surface-variant mt-1 flex-wrap">
-                        {u.pegawai?.nip && (
-                          <span className="font-mono bg-surface-container-high px-1.5 py-0.2 rounded text-[9.5px] font-semibold text-primary">
-                            NIP. {u.pegawai.nip}
+                      {/* Baris 1: Nama Lengkap dan Badge NIP */}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="font-bold text-xs text-on-surface leading-snug">
+                          {nama}
+                        </p>
+                        {nip && (
+                          <span className="font-mono bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.5 rounded text-[9.5px] font-bold shrink-0">
+                            NIP. {nip}
                           </span>
                         )}
-                        <span className="opacity-80">
-                          {badge}
-                        </span>
                       </div>
 
-                      {u.pegawai?.unit_es2 && (
-                        <p className="text-[9.5px] text-on-surface-variant/70 mt-0.5">
-                          Unit: {u.pegawai.unit_es2}
-                        </p>
-                      )}
+                      {/* Baris 2: Jabatan dan Unit Kerja */}
+                      <div className="flex items-center gap-1.5 text-[10px] text-on-surface-variant mt-1 flex-wrap">
+                        <span className="font-medium text-on-surface-variant/90">
+                          {badge}
+                        </span>
+                        {u.pegawai?.unit_es2 && (
+                          <>
+                            <span className="text-outline-variant">•</span>
+                            <span className="text-on-surface-variant/70">
+                              {u.pegawai.unit_es2}
+                            </span>
+                          </>
+                        )}
+                      </div>
                     </div>
 
                     {isSelected && (

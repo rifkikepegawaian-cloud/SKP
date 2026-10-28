@@ -482,18 +482,23 @@ export function CascadingProvider({ children }: { children: React.ReactNode }) {
 
     let subsList: User[] = []
     try {
-      let query = supabase
-        .from('users')
-        .select('*, pegawai(*)')
-        .ilike('role', `%${targetRole}%`)
-        .order('email', { ascending: true })
+      const structural = await getStructuralSubordinates(user, role, supabase)
+      if (structural && structural.length > 0) {
+        subsList = structural
+      } else {
+        let query = supabase
+          .from('users')
+          .select('*, pegawai!inner(*)')
+          .ilike('role', `%${targetRole}%`)
+          .order('email', { ascending: true })
 
-      if (targetUnitEs2) {
-        query = query.eq('pegawai.unit_es2', targetUnitEs2)
+        if (targetUnitEs2) {
+          query = query.ilike('pegawai.unit_es2', `%${targetUnitEs2}%`)
+        }
+
+        const { data } = await query.limit(50)
+        subsList = (data as User[]) || []
       }
-
-      const { data } = await query
-      subsList = (data as User[]) || []
     } catch (e) {
       console.warn('Gagal memuat bawahan unit:', e)
     }
@@ -616,18 +621,23 @@ export function CascadingProvider({ children }: { children: React.ReactNode }) {
 
     let subsList: User[] = []
     try {
-      let query = supabase
-        .from('users')
-        .select('*, pegawai(*)')
-        .ilike('role', `%${targetRole}%`)
-        .order('email', { ascending: true })
+      const structural = await getStructuralSubordinates(user, role, supabase)
+      if (structural && structural.length > 0) {
+        subsList = structural
+      } else {
+        let query = supabase
+          .from('users')
+          .select('*, pegawai!inner(*)')
+          .ilike('role', `%${targetRole}%`)
+          .order('email', { ascending: true })
 
-      if (unitEs2) {
-        query = query.eq('pegawai.unit_es2', unitEs2)
+        if (unitEs2) {
+          query = query.ilike('pegawai.unit_es2', `%${unitEs2}%`)
+        }
+
+        const { data } = await query.limit(50)
+        subsList = (data as User[]) || []
       }
-
-      const { data } = await query
-      subsList = (data as User[]) || []
     } catch (e) {
       console.warn('Gagal memuat daftar manajer:', e)
     }

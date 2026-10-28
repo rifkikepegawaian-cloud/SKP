@@ -99,9 +99,10 @@ export default function TargetSplitterModal({
         kodeIku,
       })
 
+      const defaultSubordinate = subordinates.find(s => s.pegawai?.nama_lengkap) || subordinates[0]
       setRows([
         { 
-          userId: subordinates[0]?.id || '', 
+          userId: defaultSubordinate?.id || '', 
           target: requiresTaskName ? '1' : parentTarget, 
           namaTugas: '',
           satuan: satuan || 'Laporan',
@@ -137,9 +138,10 @@ export default function TargetSplitterModal({
   const handleAddRow = () => {
     // Pada mode uraian operasional, bawahan bisa dipilih berkali-kali untuk uraian tugas berbeda
     const defaultNewTarget = requiresTaskName ? '1' : (isRatioOrText ? currentTarget : (remainingTarget > 0 ? remainingTarget : 0))
+    const defaultSub = subordinates.find(s => s.pegawai?.nama_lengkap) || subordinates[0]
     const nextSubordinate = requiresTaskName 
-      ? (subordinates[0]?.id || '') 
-      : (subordinates.find(s => !rows.some(r => r.userId === s.id))?.id || subordinates[0]?.id || '')
+      ? (defaultSub?.id || '') 
+      : (subordinates.find(s => !rows.some(r => r.userId === s.id))?.id || defaultSub?.id || '')
 
     const formula = generateCascadingFormula({
       level: currentCascadingLevel,
