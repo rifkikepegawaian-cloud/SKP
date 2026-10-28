@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { resolveRoleFromTugasTambahan } from '@/lib/roleResolver'
 
 export async function GET(req: NextRequest) {
   try {
@@ -60,10 +61,10 @@ export async function POST(req: NextRequest) {
       .from('employees')
       .select('id', { count: 'exact', head: true })
 
-    // 2. Fetch chunk from external database
+    // 2. Fetch chunk from external database including tugas_tambahan
     const { data: extData, error: extErr } = await externalSupabase
       .from('employees')
-      .select('nip, nama_lengkap, nama, jabatan, pangkat, golongan, unit_es_ii, unit_es_iii, unit_es_iv, tmt_jab')
+      .select('nip, nama_lengkap, nama, jabatan, pangkat, golongan, unit_es_ii, unit_es_iii, unit_es_iv, tmt_jab, tugas_tambahan')
       .order('nip', { ascending: true })
       .range(offset, offset + limit - 1)
 
@@ -91,7 +92,7 @@ export async function POST(req: NextRequest) {
 
     const existingNipSet = new Set((existingLocal || []).map(p => p.nip))
 
-    // 4. Test if local pegawai has pangkat_golongan column
+    // 4. Test if local pegawai has optional columns
     let supportsPangkat = false
     const { error: testPangkatErr } = await localSupabase
       .from('pegawai')
@@ -99,6 +100,15 @@ export async function POST(req: NextRequest) {
       .limit(1)
     if (!testPangkatErr) {
       supportsPangkat = true
+    }
+
+    let supportsTugasTambahan = false
+    const { error: testTtErr } = await localSupabase
+      .from('pegawai')
+      .select('tugas_tambahan')
+      .limit(1)
+    if (!testTtErr) {
+      supportsTugasTambahan = true
     }
 
     // 5. Build upsert payload
@@ -138,6 +148,10 @@ export async function POST(req: NextRequest) {
         payload.pangkat_golongan = pangkatGol
       }
 
+      if (supportsTugasTambahan && item.tugas_tambahan) {
+        payload.tugas_tambahan = item.tugas_tambahan.trim()
+      }
+
       if (existingNipSet.has(nip)) {
         updatedCount++
       } else {
@@ -147,7 +161,7 @@ export async function POST(req: NextRequest) {
       upsertList.push(payload)
     }
 
-    // 6. Fast batch upsert
+    // 6. Fast batch upsert to pegawai
     if (upsertList.length > 0) {
       const { error: upsertErr } = await localSupabase
         .from('pegawai')
@@ -156,6 +170,53 @@ export async function POST(req: NextRequest) {
       if (upsertErr) {
         console.error('Upsert error:', upsertErr)
         return NextResponse.json({ success: false, error: upsertErr.message }, { status: 500 })
+      }
+    }
+
+    // 7. Sync structural roles into users table based on tugas_tambahan
+    const emails = nips.map(n => `${n}@undip.ac.id`.toLowerCase())
+    const { data: matchedUsers } = await localSupabase
+      .from('users')
+      .select('id, email, role, led_unit_es2, led_unit_es3, led_sukpa')
+      .in('email', emails)
+
+    const roleSyncCounts: Record<string, number> = {
+      rektor: 0,
+      pimpinan_sukpa: 0,
+      pimpinan_unit: 0,
+      wakil_pimpinan_unit: 0,
+      manajer: 0,
+      supervisor: 0,
+      staff: 0,
+    }
+
+    if (matchedUsers && matchedUsers.length > 0) {
+      const userByEmail = new Map(matchedUsers.map(u => [u.email.toLowerCase(), u]))
+
+      for (const item of extData) {
+        const nip = item.nip?.trim()
+        if (!nip) continue
+        const email = `${nip}@undip.ac.id`.toLowerCase()
+        const targetUser = userByEmail.get(email)
+        if (!targetUser) continue
+
+        const resolution = resolveRoleFromTugasTambahan(item)
+        roleSyncCounts[resolution.role] = (roleSyncCounts[resolution.role] || 0) + 1
+
+        // Do not strip admin privileges if user is admin
+        if (targetUser.role?.includes('admin')) continue
+
+        const targetRole = resolution.role === 'staff' ? 'staff' : `staff,${resolution.role}`
+
+        await localSupabase
+          .from('users')
+          .update({
+            role: targetRole,
+            led_unit_es2: resolution.ledUnit || targetUser.led_unit_es2 || null,
+            led_unit_es3: resolution.ledSubUnit || targetUser.led_unit_es3 || null,
+            led_sukpa: resolution.ledSukpa || targetUser.led_sukpa || null,
+          })
+          .eq('id', targetUser.id)
       }
     }
 
@@ -171,6 +232,7 @@ export async function POST(req: NextRequest) {
       nextOffset,
       totalExternal: totalExternal || 0,
       supportsPangkat,
+      roleSyncCounts,
       sampleNips: extData.slice(0, 3).map(e => `${e.nama_lengkap || e.nama} (${e.nip})`),
     })
   } catch (err: any) {

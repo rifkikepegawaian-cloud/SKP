@@ -87,7 +87,7 @@ export async function getStructuralSuperiors(
   const unitEs3 = (user.led_unit_es3 || user.pegawai?.unit_es3 || '').trim()
   const unitEs4 = (user.pegawai?.unit_es4 || '').trim()
 
-  const clean = (str: string) => str.toLowerCase().replace(/^(subbagian|bagian|departemen|fakultas|direktorat|biro)\s+/i, '').trim()
+  const clean = (str: string) => str.toLowerCase().replace(/^(subbagian|bagian|departemen|fakultas|direktorat|biro|badan|lembaga|sekolah)\s+/i, '').trim()
 
   const mapUserToProfile = (u: User, defaultJabatan: string, defaultUnit: string): ProfileSKP => {
     let nama = u.pegawai?.nama_lengkap || ''
@@ -97,7 +97,7 @@ export async function getStructuralSuperiors(
     let nip = u.pegawai?.nip || (u.email?.match(/^(\d{18})@/)?.[1] || '-')
     let pangkatGol = u.pegawai?.pangkat_golongan || '-'
     let jabatan = u.pegawai?.jabatan || defaultJabatan
-    if (defaultJabatan && !jabatan.toLowerCase().includes('supervisor') && !jabatan.toLowerCase().includes('manajer') && !jabatan.toLowerCase().includes('rektor') && !jabatan.toLowerCase().includes('dekan') && !jabatan.toLowerCase().includes('direktur') && !jabatan.toLowerCase().includes('pimpinan')) {
+    if (defaultJabatan && !jabatan.toLowerCase().includes('supervisor') && !jabatan.toLowerCase().includes('manajer') && !jabatan.toLowerCase().includes('rektor') && !jabatan.toLowerCase().includes('dekan') && !jabatan.toLowerCase().includes('direktur') && !jabatan.toLowerCase().includes('pimpinan') && !jabatan.toLowerCase().includes('badan') && !jabatan.toLowerCase().includes('biro')) {
       jabatan = defaultJabatan
     }
     return {
