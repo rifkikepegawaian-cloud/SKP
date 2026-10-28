@@ -198,12 +198,19 @@ export default function CetakDokumenEvaluasiSKPPage() {
       // Umpan Balik Berkelanjutan (e.g. "baik dan pengelolaan waktu sudah sesuai dengan jadwal")
       const umpanBalik = feedbackMap[task.id] || 'baik dan pengelolaan waktu sudah sesuai dengan jadwal'
 
+      const assignedByName =
+        (task as any).assignedByName ||
+        (task as any).assignedByUser?.pegawai?.nama_lengkap ||
+        (task as any).assignedByUser?.email ||
+        null
+
       return {
         id: task.id,
         title: task.title,
         sasaranKinerja: task.sasaranKinerja,
         indikatorKinerjaIndividu: task.indikatorKinerjaIndividu,
         parentTitle: task.parentTitle,
+        assignedByName,
         indikatorKinerja: task.indikatorKinerjaIndividu || task.indikatorKinerja || `Terprosesnya ${task.title} diproses 100%`,
         jenisKinerja: (task.jenisKinerja || 'utama') as 'utama' | 'tambahan',
         target: targetNum,
@@ -635,11 +642,21 @@ export default function CetakDokumenEvaluasiSKPPage() {
                     <td className="p-1.5 text-center font-bold w-8">{idx + 1}</td>
                     <td className="p-1.5">
                       <p className="font-bold">{item.sasaranKinerja || item.title}</p>
-                      {item.sasaranKinerja && item.title && item.sasaranKinerja !== item.title && (
-                        <p className="text-[10px] text-neutral-600 font-normal italic">
-                          Lingkup: {item.title}
-                        </p>
-                      )}
+                      <div className="text-[10px] text-neutral-600 font-normal italic flex items-center gap-1.5 flex-wrap mt-0.5">
+                        {item.sasaranKinerja && item.title && item.sasaranKinerja !== item.title && (
+                          <span>Lingkup: {item.title}</span>
+                        )}
+                        {(item.assignedByName || penilaiProfile.nama) && (
+                          <>
+                            {item.sasaranKinerja && item.title && item.sasaranKinerja !== item.title && (
+                              <span className="text-neutral-400 font-bold not-italic">•</span>
+                            )}
+                            <span>
+                              Penugasan dari: <b className="font-semibold text-neutral-800 not-italic">{item.assignedByName || penilaiProfile.nama}</b>
+                            </span>
+                          </>
+                        )}
+                      </div>
                       <p className="text-[10px] text-neutral-700 mt-1 leading-snug">
                         <span className="font-semibold">Ukuran keberhasilan/ Indikator Kinerja Individu, Target, dan Perspektif :</span>{' '}
                         {item.indikatorKinerjaIndividu || item.indikatorKinerja}
@@ -674,11 +691,21 @@ export default function CetakDokumenEvaluasiSKPPage() {
                       <td className="p-1.5 text-center font-bold w-8">{idx + 1}</td>
                       <td className="p-1.5">
                         <p className="font-bold">{item.sasaranKinerja || item.title}</p>
-                        {item.sasaranKinerja && item.title && item.sasaranKinerja !== item.title && (
-                          <p className="text-[10px] text-neutral-600 font-normal italic">
-                            Lingkup: {item.title}
-                          </p>
-                        )}
+                        <div className="text-[10px] text-neutral-600 font-normal italic flex items-center gap-1.5 flex-wrap mt-0.5">
+                          {item.sasaranKinerja && item.title && item.sasaranKinerja !== item.title && (
+                            <span>Lingkup: {item.title}</span>
+                          )}
+                          {(item.assignedByName || penilaiProfile.nama) && (
+                            <>
+                              {item.sasaranKinerja && item.title && item.sasaranKinerja !== item.title && (
+                                <span className="text-neutral-400 font-bold not-italic">•</span>
+                              )}
+                              <span>
+                                Penugasan dari: <b className="font-semibold text-neutral-800 not-italic">{item.assignedByName || penilaiProfile.nama}</b>
+                              </span>
+                            </>
+                          )}
+                        </div>
                         <p className="text-[10px] text-neutral-700 mt-1 leading-snug">
                           <span className="font-semibold">Ukuran keberhasilan/ Indikator Kinerja Individu, Target, dan Perspektif :</span>{' '}
                           {item.indikatorKinerjaIndividu || item.indikatorKinerja}

@@ -430,11 +430,21 @@ export default function CetakDokumenSKPPage() {
                         </td>
                         <td className="p-1.5 align-top font-semibold leading-relaxed">
                           <p className="font-bold">{task.sasaranKinerja || task.title}</p>
-                          {task.sasaranKinerja && task.title && task.sasaranKinerja !== task.title && (
-                            <p className="text-[10px] text-neutral-600 font-normal italic">
-                              Lingkup: {task.title}
-                            </p>
-                          )}
+                          <div className="text-[10px] text-neutral-600 font-normal italic flex items-center gap-1.5 flex-wrap mt-0.5">
+                            {task.sasaranKinerja && task.title && task.sasaranKinerja !== task.title && (
+                              <span>Lingkup: {task.title}</span>
+                            )}
+                            {(task.assignedByName || penilaiProfile.nama) && (
+                              <>
+                                {task.sasaranKinerja && task.title && task.sasaranKinerja !== task.title && (
+                                  <span className="text-neutral-400 font-bold not-italic">•</span>
+                                )}
+                                <span>
+                                  Penugasan dari: <b className="font-semibold text-neutral-800 not-italic">{task.assignedByName || penilaiProfile.nama}</b>
+                                </span>
+                              </>
+                            )}
+                          </div>
                         </td>
                       </tr>
 
@@ -475,11 +485,21 @@ export default function CetakDokumenSKPPage() {
                         </td>
                         <td className="p-1.5 align-top font-semibold leading-relaxed">
                           <p className="font-bold">{task.sasaranKinerja || task.title}</p>
-                          {task.sasaranKinerja && task.title && task.sasaranKinerja !== task.title && (
-                            <p className="text-[10px] text-neutral-600 font-normal italic">
-                              Lingkup: {task.title}
-                            </p>
-                          )}
+                          <div className="text-[10px] text-neutral-600 font-normal italic flex items-center gap-1.5 flex-wrap mt-0.5">
+                            {task.sasaranKinerja && task.title && task.sasaranKinerja !== task.title && (
+                              <span>Lingkup: {task.title}</span>
+                            )}
+                            {(task.assignedByName || penilaiProfile.nama) && (
+                              <>
+                                {task.sasaranKinerja && task.title && task.sasaranKinerja !== task.title && (
+                                  <span className="text-neutral-400 font-bold not-italic">•</span>
+                                )}
+                                <span>
+                                  Penugasan dari: <b className="font-semibold text-neutral-800 not-italic">{task.assignedByName || penilaiProfile.nama}</b>
+                                </span>
+                              </>
+                            )}
+                          </div>
                         </td>
                       </tr>
                       <tr className="border-b border-black">

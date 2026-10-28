@@ -85,6 +85,7 @@ interface CascadingContextType {
     indikatorKinerjaIndividu?: string
     jenisKinerja?: 'utama' | 'tambahan'
     assignedByUser?: User | null
+    assignedByName?: string | null
     capaian_realisasi?: number
     capaian_approved?: number
   }>
@@ -403,6 +404,7 @@ export function CascadingProvider({ children }: { children: React.ReactNode }) {
           indikatorKinerjaIndividu: formula.ikiRektor,
           jenisKinerja: 'utama' as const,
           assignedByUser: null,
+          assignedByName: 'Menteri Pendidikan Tinggi, Sains, dan Teknologi RI',
           capaian_realisasi: 0,
           capaian_approved: 0,
         }
@@ -455,6 +457,11 @@ export function CascadingProvider({ children }: { children: React.ReactNode }) {
         const sasaranKinerja = t.sasaran_kinerja || fallbackFormula.sasaranKinerja
         const indikatorKinerjaIndividu = t.indikator_kinerja_individu || fallbackFormula.indikatorKinerjaIndividu
 
+        const assignedByName =
+          t.assigned_by_user?.pegawai?.nama_lengkap ||
+          t.assigned_by_user?.email ||
+          (role === 'pimpinan_sukpa' ? 'Prof. Dr. Suharnomo, S.E., M.Si. (Rektor Undip)' : null)
+
         return {
           id: t.id,
           title,
@@ -467,6 +474,7 @@ export function CascadingProvider({ children }: { children: React.ReactNode }) {
           indikatorKinerjaIndividu,
           jenisKinerja: (t.jenis_kinerja || 'utama') as 'utama' | 'tambahan',
           assignedByUser: t.assigned_by_user || null,
+          assignedByName,
           capaian_realisasi: t.capaian_realisasi || 0,
           capaian_approved: t.capaian_approved || 0,
         }
