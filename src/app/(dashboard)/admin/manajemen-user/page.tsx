@@ -52,6 +52,7 @@ export default function ManajemenPegawaiUserPage() {
     processed: number
     inserted: number
     updated: number
+    rolesUpdated: number
     isLoadingStats: boolean
     isSyncing: boolean
     progress: number
@@ -63,6 +64,7 @@ export default function ManajemenPegawaiUserPage() {
     processed: 0,
     inserted: 0,
     updated: 0,
+    rolesUpdated: 0,
     isLoadingStats: false,
     isSyncing: false,
     progress: 0,
@@ -73,6 +75,13 @@ export default function ManajemenPegawaiUserPage() {
   const [syncCustomKey, setSyncCustomKey] = useState('')
   const [showAdvancedSync, setShowAdvancedSync] = useState(false)
   const syncCancelRef = useRef(false)
+  const logTerminalRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (logTerminalRef.current) {
+      logTerminalRef.current.scrollTop = logTerminalRef.current.scrollHeight
+    }
+  }, [syncStats.logs])
 
   const showToast = (message: string, type: 'success' | 'error') => {
     setToast({ message, type })
@@ -445,6 +454,7 @@ export default function ManajemenPegawaiUserPage() {
       processed: 0,
       inserted: 0,
       updated: 0,
+      rolesUpdated: 0,
       isLoadingStats: true,
       isSyncing: false,
       progress: 0,
@@ -495,18 +505,21 @@ export default function ManajemenPegawaiUserPage() {
       processed: 0,
       inserted: 0,
       updated: 0,
+      rolesUpdated: 0,
       progress: 0,
-      logs: ['Memulai proses sinkronisasi master pegawai...'],
+      logs: ['Memulai proses sinkronisasi master pegawai & penyelarasan role struktural...'],
     }))
 
-    const batchSize = 250
+    const batchSize = 100
     let offset = 0
     let totalInserted = 0
     let totalUpdated = 0
     let totalProcessed = 0
+    let totalRolesUpdated = 0
     let batchIndex = 1
     let hasMore = true
     let detectedPangkat: boolean | null = null
+    const cachedExternalTotal = syncStats.externalCount || 0
 
     try {
       while (hasMore) {
@@ -519,12 +532,22 @@ export default function ManajemenPegawaiUserPage() {
           break
         }
 
+        // Live notification before fetch
+        setSyncStats(s => ({
+          ...s,
+          logs: [
+            ...s.logs.slice(-25),
+            `[Batch #${batchIndex}] Mengambil & memproses data ke-${offset + 1} s/d ${offset + batchSize}...`,
+          ],
+        }))
+
         const res = await fetch('/api/sync-pegawai', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             offset,
             limit: batchSize,
+            totalExternal: cachedExternalTotal || undefined,
             customUrl: syncCustomUrl || undefined,
             customKey: syncCustomKey || undefined,
           }),
@@ -538,11 +561,12 @@ export default function ManajemenPegawaiUserPage() {
         totalInserted += data.inserted || 0
         totalUpdated += data.updated || 0
         totalProcessed += data.processed || 0
+        totalRolesUpdated += data.rolesUpdated || 0
         if (data.supportsPangkat !== undefined) {
           detectedPangkat = data.supportsPangkat
         }
 
-        const totalExt = data.totalExternal || syncStats.externalCount || totalProcessed
+        const totalExt = data.totalExternal || cachedExternalTotal || totalProcessed
         const currentProgress = totalExt > 0 ? Math.min(100, Math.round((totalProcessed / totalExt) * 100)) : 100
 
         setSyncStats(s => ({
@@ -550,11 +574,12 @@ export default function ManajemenPegawaiUserPage() {
           processed: totalProcessed,
           inserted: totalInserted,
           updated: totalUpdated,
+          rolesUpdated: totalRolesUpdated,
           progress: currentProgress,
           supportsPangkat: detectedPangkat,
           logs: [
-            ...s.logs.slice(-15),
-            `[Batch #${batchIndex}] Data ke-${offset + 1} s/d ${offset + data.processed}: +${data.inserted} baru, ~${data.updated} diupdate.`,
+            ...s.logs.slice(-25),
+            `✓ [Batch #${batchIndex}] Selesai (${data.processed} data): +${data.inserted} baru, ~${data.updated} pegawai, ${data.rolesUpdated || 0} role diselaraskan.`,
           ],
         }))
 
@@ -570,12 +595,13 @@ export default function ManajemenPegawaiUserPage() {
           progress: 100,
           logs: [
             ...s.logs,
-            `✅ Selesai! Berhasil memproses ${totalProcessed.toLocaleString()} data pegawai.`,
+            `✅ Selesai! Berhasil memproses total ${totalProcessed.toLocaleString()} data pegawai.`,
             `Total Pegawai Baru Ditambahkan: +${totalInserted.toLocaleString()}`,
             `Total Pegawai Diperbarui: ~${totalUpdated.toLocaleString()}`,
+            `Total Role Struktural User Diselaraskan: 👥 ${totalRolesUpdated.toLocaleString()}`,
           ],
         }))
-        showToast(`Sinkronisasi selesai! +${totalInserted} baru, ~${totalUpdated} diupdate.`, 'success')
+        showToast(`Sinkronisasi selesai! +${totalInserted} baru, ~${totalUpdated} diupdate, ${totalRolesUpdated} role diselaraskan.`, 'success')
         fetchPegawai()
         fetchUsers()
       }
@@ -1578,16 +1604,21 @@ export default function ManajemenPegawaiUserPage() {
                       style={{ width: `${syncStats.progress}%` }}
                     />
                   </div>
-                  <div className="flex justify-between text-[11px] text-secondary font-mono pt-1">
+                  <div className="flex flex-wrap justify-between gap-2 text-[11px] text-secondary font-mono pt-1">
                     <span>Diproses: {syncStats.processed.toLocaleString()} data</span>
                     <span className="text-emerald-700 font-semibold">+{syncStats.inserted.toLocaleString()} baru</span>
                     <span className="text-teal-700 font-semibold">~{syncStats.updated.toLocaleString()} diupdate</span>
+                    {syncStats.rolesUpdated > 0 && (
+                      <span className="text-indigo-700 font-bold bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-200">
+                        👥 {syncStats.rolesUpdated.toLocaleString()} role
+                      </span>
+                    )}
                   </div>
                 </div>
               )}
 
               {/* Live Log Terminal */}
-              <div className="rounded-2xl bg-neutral-900 text-neutral-200 p-4 font-mono text-[12px] shadow-inner max-h-48 overflow-y-auto space-y-1.5 border border-neutral-800">
+              <div ref={logTerminalRef} className="rounded-2xl bg-neutral-900 text-neutral-200 p-4 font-mono text-[12px] shadow-inner max-h-48 overflow-y-auto space-y-1.5 border border-neutral-800 scroll-smooth">
                 <div className="flex items-center justify-between pb-2 mb-2 border-b border-neutral-800 text-[11px] text-neutral-400">
                   <span className="flex items-center gap-1.5 font-bold">
                     <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>

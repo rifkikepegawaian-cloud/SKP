@@ -56,10 +56,14 @@ export async function POST(req: NextRequest) {
     }
     const externalSupabase = createClient(externalUrl, externalKey)
 
-    // 1. Total count
-    const { count: totalExternal } = await externalSupabase
-      .from('employees')
-      .select('id', { count: 'exact', head: true })
+    // 1. Total count (cached if passed from client, or only fetched on first batch)
+    let totalExternal = Number(body.totalExternal) || null
+    if (totalExternal === null && offset === 0) {
+      const { count } = await externalSupabase
+        .from('employees')
+        .select('id', { count: 'exact', head: true })
+      totalExternal = count || 0
+    }
 
     // 2. Fetch chunk from external database including tugas_tambahan
     const { data: extData, error: extErr } = await externalSupabase
@@ -78,6 +82,7 @@ export async function POST(req: NextRequest) {
         processed: 0,
         inserted: 0,
         updated: 0,
+        rolesUpdated: 0,
         hasMore: false,
         totalExternal: totalExternal || 0,
       })
@@ -190,8 +195,11 @@ export async function POST(req: NextRequest) {
       staff: 0,
     }
 
+    let rolesUpdatedInBatch = 0
+
     if (matchedUsers && matchedUsers.length > 0) {
       const userByEmail = new Map(matchedUsers.map(u => [u.email.toLowerCase(), u]))
+      const updatePromises: Promise<any>[] = []
 
       for (const item of extData) {
         const nip = item.nip?.trim()
@@ -207,16 +215,38 @@ export async function POST(req: NextRequest) {
         if (targetUser.role?.includes('admin')) continue
 
         const targetRole = resolution.role === 'staff' ? 'staff' : `staff,${resolution.role}`
+        const targetLed2 = resolution.ledUnit || targetUser.led_unit_es2 || null
+        const targetLed3 = resolution.ledSubUnit || targetUser.led_unit_es3 || null
+        const targetSukpa = resolution.ledSukpa || targetUser.led_sukpa || null
 
-        await localSupabase
-          .from('users')
-          .update({
-            role: targetRole,
-            led_unit_es2: resolution.ledUnit || targetUser.led_unit_es2 || null,
-            led_unit_es3: resolution.ledSubUnit || targetUser.led_unit_es3 || null,
-            led_sukpa: resolution.ledSukpa || targetUser.led_sukpa || null,
-          })
-          .eq('id', targetUser.id)
+        // Check if anything actually changed before making database network call
+        const roleChanged = targetUser.role !== targetRole
+        const led2Changed = (targetUser.led_unit_es2 || null) !== targetLed2
+        const led3Changed = (targetUser.led_unit_es3 || null) !== targetLed3
+        const sukpaChanged = (targetUser.led_sukpa || null) !== targetSukpa
+
+        if (roleChanged || led2Changed || led3Changed || sukpaChanged) {
+          rolesUpdatedInBatch++
+          updatePromises.push(
+            Promise.resolve(
+              localSupabase
+                .from('users')
+                .update({
+                  role: targetRole,
+                  led_unit_es2: targetLed2,
+                  led_unit_es3: targetLed3,
+                  led_sukpa: targetSukpa,
+                })
+                .eq('id', targetUser.id)
+            )
+          )
+        }
+      }
+
+      // Execute required user updates in parallel chunks of 15
+      const CHUNK_SIZE = 15
+      for (let i = 0; i < updatePromises.length; i += CHUNK_SIZE) {
+        await Promise.all(updatePromises.slice(i, i + CHUNK_SIZE))
       }
     }
 
@@ -228,6 +258,7 @@ export async function POST(req: NextRequest) {
       processed: extData.length,
       inserted: insertedCount,
       updated: updatedCount,
+      rolesUpdated: rolesUpdatedInBatch,
       hasMore,
       nextOffset,
       totalExternal: totalExternal || 0,
